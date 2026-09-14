@@ -1,0 +1,11 @@
+gantt-timeline:
+  version: 1.x
+  js:
+    js/gantt-timeline.js: {}
+  css:
+    theme:
+      css/gantt-timeline.css: {}
+  dependencies:
+    - core/drupal
+    - core/once
+    - core/drupalSettings

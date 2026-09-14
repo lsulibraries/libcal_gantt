@@ -1,0 +1,16 @@
+libcal_gantt.settings:
+  path: '/admin/config/services/libcal-gantt'
+  defaults:
+    _form: '\Drupal\libcal_gantt\Form\SettingsForm'
+    _title: 'LibCal Gantt Timeline settings'
+  requirements:
+    _permission: 'administer site configuration'
+
+libcal_gantt.events:
+  path: '/libcal-gantt/events'
+  defaults:
+    _controller: '\Drupal\libcal_gantt\Controller\GanttEventsController::getEvents'
+  requirements:
+    _access: 'TRUE'
+  options:
+    no_cache: TRUE

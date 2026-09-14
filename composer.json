@@ -1,11 +1,17 @@
 {
-  "name": "lsulibraries/libcal_gantt",
-  "type": "drupal-custom-module",
-  "license": "GPL-2.0-or-later",
-  "authors": [
+    "name": "lsulibraries/libcal_gantt",
+    "type": "drupal-custom-module",
+    "license": "GPL-2.0-or-later",
+    "homepage": "https://github.com/lsulibraries/libcal_gantt",
+    "require": {
+        "php": ">=8.1",
+        "drupal/core": "^10.2 || ^11"
+    },
+    "minimum-stability": "stable",
+    "authors": [
     {
-      "name": "Kyle Tanglao",
-      "email": "ktanglao@lsu.edu"
+        "name": "Kyle Tanglao",
+        "email": "ktanglao@lsu.edu"
     }
-  ]
+    ]
 }

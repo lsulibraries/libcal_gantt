@@ -1,0 +1,13 @@
+services:
+  logger.channel.libcal_gantt:
+    parent: logger.channel_base
+    arguments: ['libcal_gantt']
+
+  libcal_gantt.client:
+    class: Drupal\libcal_gantt\Service\LibCalClient
+    arguments:
+      - '@http_client'
+      - '@config.factory'
+      - '@cache.default'
+      - '@datetime.time'
+      - '@logger.channel.libcal_gantt'

@@ -1,0 +1,12 @@
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Dependency directories, if this module is ever developed with its own
+# Composer/npm tooling (e.g. a dev-time linter) rather than as a
+# dependency of a full Drupal site.
+/vendor/
+/node_modules/

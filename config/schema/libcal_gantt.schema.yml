@@ -1,0 +1,61 @@
+libcal_gantt.settings:
+  type: config_object
+  label: 'LibCal Gantt Timeline settings'
+  mapping:
+    host:
+      type: string
+      label: 'LibCal host'
+    client_id:
+      type: string
+      label: 'Client ID'
+    client_secret:
+      type: string
+      label: 'Client secret'
+    calendars:
+      type: text
+      label: 'Calendars'
+    weekday_count:
+      type: integer
+      label: 'Number of weekdays to display'
+    event_limit:
+      type: integer
+      label: 'Max events per calendar request'
+    cache_ttl:
+      type: integer
+      label: 'Cache lifetime in seconds'
+    timezone:
+      type: string
+      label: 'Timezone'
+    day_start_hour:
+      type: integer
+      label: 'Day start hour'
+    day_end_hour:
+      type: integer
+      label: 'Day end hour'
+    hours_feed_url:
+      type: string
+      label: 'Hours feed URL'
+    hours_cache_ttl:
+      type: integer
+      label: 'Hours cache lifetime in seconds'
+    campus_rows:
+      type: text
+      label: 'Location rows'
+    online_row_label:
+      type: string
+      label: 'Online events row label'
+    online_location_keywords:
+      type: string
+      label: 'Online location keywords'
+    campus_hours_feed_urls:
+      type: sequence
+      label: 'Per-row hours feed URLs'
+      sequence:
+        type: string
+        label: 'Hours feed URL'
+    campus_hours_lids:
+      type: sequence
+      label: 'Per-row hours feed location IDs (lid)'
+      sequence:
+        type: integer
+        label: 'Location ID (lid)'

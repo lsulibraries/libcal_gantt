@@ -1,0 +1,453 @@
+/**
+ * LibCal Gantt Timeline - base styling.
+ *
+ * Everything visual is exposed as a CSS custom property so a theme can
+ * override the look without touching this file - e.g. in your theme's
+ * stylesheet:
+ *
+ *   .libcal-gantt-chart {
+ *     --libcal-gantt-bar-bg: #003057;
+ *     --libcal-gantt-bar-color: #fff;
+ *     --libcal-gantt-header-bg: #f4f4f4;
+ *   }
+ */
+
+.libcal-gantt-chart {
+  --libcal-gantt-border: #dcdcdc;
+  --libcal-gantt-header-bg: #f4f4f4;
+  --libcal-gantt-header-color: #1a1a1a;
+  --libcal-gantt-row-label-width: clamp(120px, 18vw, 220px);
+  --libcal-gantt-row-height: 3rem;
+  --libcal-gantt-bar-bg: #2469b3;
+  --libcal-gantt-bar-color: #fff;
+  --libcal-gantt-bar-radius: 4px;
+  --libcal-gantt-font-size: 0.875rem;
+
+  font-size: var(--libcal-gantt-font-size);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.libcal-gantt-chart__loading,
+.libcal-gantt-chart__empty,
+.libcal-gantt-chart__error {
+  padding: 1rem 0;
+  color: #555;
+}
+
+.libcal-gantt-chart__error {
+  color: #a52121;
+}
+
+/*
+ * Calendar switcher - only rendered at all when more than one calendar is
+ * configured (see "Calendars" on the settings form). Lives inside
+ * .libcal-gantt-chart, which is the element that actually scrolls
+ * horizontally once the grid below is wider than the viewport - without
+ * `position: sticky; left: 0` here the tabs would scroll off to the left
+ * along with the grid instead of staying put, same reasoning as
+ * .libcal-gantt__corner below.
+ */
+.libcal-gantt-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  position: sticky;
+  left: 0;
+}
+
+.libcal-gantt-tabs__tab {
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 0.5rem 1.1rem;
+  border: 1px solid var(--libcal-gantt-border);
+  border-radius: 999px;
+  background: var(--libcal-gantt-header-bg);
+  color: var(--libcal-gantt-header-color);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.libcal-gantt-tabs__tab:hover:not(.is-active) {
+  border-color: var(--libcal-gantt-bar-bg);
+}
+
+.libcal-gantt-tabs__tab.is-active {
+  background: var(--libcal-gantt-bar-bg);
+  border-color: var(--libcal-gantt-bar-bg);
+  color: var(--libcal-gantt-bar-color);
+  cursor: default;
+}
+
+.libcal-gantt {
+  display: grid;
+  grid-template-columns: var(--libcal-gantt-row-label-width) repeat(var(--libcal-gantt-days), minmax(90px, 1fr));
+  /* A block-level element with width:auto stretches to fill its
+     containing block rather than growing to fit its content, which would
+     silently squash every day column below its 90px minimum instead of
+     scrolling once there are more days than fit. width: max-content lets
+     the grid report its true content width to the scrollable
+     .libcal-gantt-chart wrapper above, and min-width: 100% keeps it from
+     looking stranded/left-aligned when there's room to spare. */
+  width: max-content;
+  min-width: 100%;
+  border: 1px solid var(--libcal-gantt-border);
+  border-radius: 6px;
+}
+
+.libcal-gantt__corner,
+.libcal-gantt__day-header {
+  background: var(--libcal-gantt-header-bg);
+  color: var(--libcal-gantt-header-color);
+  font-weight: 600;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--libcal-gantt-border);
+  border-left: 1px solid var(--libcal-gantt-border);
+  text-align: center;
+  /* No longer position: sticky; top: 0 here. "Show more" now repeats
+     this header row every GRID_DAYS_PER_ROW days down the page (see
+     buildGrid() in gantt-timeline.js) instead of growing one header row
+     wider, so a fresh header is never far away as you scroll; several
+     stacked sticky-top headers would instead overlap each other rather
+     than handing off cleanly. */
+}
+
+.libcal-gantt__corner {
+  border-left: none;
+  text-align: left;
+  /* Still sticks horizontally, independent of the vertical stickiness
+     removed above, so it stays visible while its own block's day
+     columns scroll sideways. */
+  position: sticky;
+  left: 0;
+  z-index: 2;
+}
+
+.libcal-gantt__day-header--empty,
+.libcal-gantt__day-cell--empty {
+  /* Padding cells fill out a short final block of days (fewer than
+     GRID_DAYS_PER_ROW real days left) up to the full column count - see
+     buildPaddingCell() in gantt-timeline.js. Cleared to blank space
+     rather than looking like an extra, empty day. */
+  background: transparent;
+  border-color: transparent;
+}
+
+.libcal-gantt__row-header {
+  padding: 0.5rem 0.75rem;
+  border-top: 1px solid var(--libcal-gantt-border);
+  display: flex;
+  align-items: center;
+  font-weight: 500;
+  min-height: var(--libcal-gantt-row-height);
+  background: #fff;
+  /* Keeps the location label in view while the day columns scroll
+     horizontally - important once there are more day columns than fit
+     the viewport, e.g. a tablet showing the full 10-weekday grid. */
+  position: sticky;
+  left: 0;
+  z-index: 1;
+}
+
+.libcal-gantt__day-cell {
+  position: relative;
+  border-top: 1px solid var(--libcal-gantt-border);
+  border-left: 1px solid var(--libcal-gantt-border);
+  min-height: var(--libcal-gantt-row-height);
+  background: #fff;
+  /* Events stack vertically in start-time order (earliest on top) rather
+     than being positioned by time of day - each bar is a normal flow
+     child here, full width via the flex column's default stretch, and
+     the cell (and therefore the whole grid row, since CSS Grid rows
+     size to their tallest cell) grows to fit however many are stacked. */
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.375rem;
+}
+
+.libcal-gantt__empty-row {
+  padding: 1.25rem 0.75rem;
+  text-align: center;
+  color: #666;
+  border-top: 1px solid var(--libcal-gantt-border);
+}
+
+.libcal-gantt__bar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  background: var(--libcal-gantt-bar-bg);
+  color: var(--libcal-gantt-bar-color);
+  border-radius: var(--libcal-gantt-bar-radius);
+  padding: 0.35rem 0.5rem;
+  text-decoration: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  transition: filter 0.15s ease;
+  max-width: 200px;
+}
+
+.libcal-gantt__bar:hover,
+.libcal-gantt__bar:focus {
+  filter: brightness(1.1);
+  outline: 2px solid var(--libcal-gantt-bar-bg);
+  outline-offset: 1px;
+}
+
+.libcal-gantt__bar-time {
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  opacity: 0.85;
+}
+
+.libcal-gantt__bar-label {
+  overflow-wrap: break-word;
+  font-size: 0.8125rem;
+  line-height: 1.25;
+}
+
+.libcal-gantt__bar-location {
+  overflow-wrap: break-word;
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  opacity: 0.85;
+}
+
+/**
+ * Building-hours captions (optional, only appear when a Hours feed URL is
+ * configured for a row). Plain in-flow text, not absolutely-positioned
+ * shading - a day cell no longer has a horizontal time axis (events
+ * stack full-width by start time instead of being positioned by time of
+ * day), so a proportional band would no longer correspond to anything
+ * visible on the chart. See appendOpeningCaption()/appendClosingCaption()
+ * in gantt-timeline.js: the opening caption (or "Closed") is the first
+ * child in the day cell, the closing caption the last, bracketing that
+ * row's events for the day.
+ */
+.libcal-gantt__hours-caption {
+  font-size: 0.6875rem;
+  font-style: italic;
+  line-height: 1.3;
+  color: #666;
+}
+
+.libcal-gantt__hours-caption--closed {
+  /* Fills whatever space real events don't take up, so a closed day
+     reads as clearly "off" at a glance rather than just an ordinary
+     line of text with empty space underneath it. */
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.5rem;
+  border-radius: 4px;
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(0, 0, 0, 0.035),
+    rgba(0, 0, 0, 0.035) 6px,
+    rgba(0, 0, 0, 0.07) 6px,
+    rgba(0, 0, 0, 0.07) 12px
+  );
+}
+
+/**
+ * Dynamic state classes - see gantt-timeline.js. `past_date` is added to
+ * a day header/cell (grid view) or a day section (mobile agenda) whose
+ * date has already gone by; `now_open`/`now_closed` is added to a row
+ * header (grid view) or an hours line (mobile agenda, today only)
+ * reflecting whether that location is open RIGHT NOW - not tied to
+ * which days happen to be visible in that particular block. These are
+ * deliberately plain, unprefixed class names (not the module's usual
+ * libcal-gantt__ BEM naming) so a theme or an external script can target
+ * them directly. The defaults below are intentionally light-touch -
+ * override or remove them freely in your theme.
+ */
+.past_date {
+  opacity: 0.55;
+}
+
+.libcal-gantt__row-header.now_open::after,
+.libcal-gantt__row-header.now_closed::after,
+.libcal-gantt-agenda__hours.now_open::after,
+.libcal-gantt-agenda__hours.now_closed::after {
+  content: '';
+  display: inline-block;
+  width: 0.5em;
+  height: 0.5em;
+  margin-left: 0.5em;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+
+.now_open::after {
+  background: #2e8b47;
+}
+
+.now_closed::after {
+  background: #a52121;
+}
+
+/**
+ * Mobile agenda view.
+ *
+ * A 10-column grid can't be made to work on a phone by shrinking it - the
+ * bars end up too thin to read or tap. Below the breakpoint we hide the
+ * grid entirely and show a vertical, day-by-day list instead. Both are
+ * built into the DOM up front (see gantt-timeline.js); this media query
+ * just decides which one is visible, so the swap happens instantly on
+ * resize/rotation with no JavaScript involved.
+ */
+.libcal-gantt-agenda {
+  display: none;
+}
+
+.libcal-gantt-agenda__day {
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--libcal-gantt-border);
+}
+
+.libcal-gantt-agenda__day:last-child {
+  border-bottom: none;
+}
+
+.libcal-gantt-agenda__day-title {
+  font-weight: 600;
+  color: var(--libcal-gantt-header-color);
+  margin-bottom: 0.375rem;
+}
+
+.libcal-gantt-agenda__hours {
+  font-size: 0.8125rem;
+  color: #666;
+  margin: -0.15rem 0 0.5rem;
+}
+
+.libcal-gantt-agenda__empty {
+  margin: 0;
+  color: #666;
+  font-size: 0.8125rem;
+}
+
+.libcal-gantt-agenda__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.libcal-gantt-agenda__event {
+  border-bottom: 1px solid #eee;
+}
+
+.libcal-gantt-agenda__event:last-child {
+  border-bottom: none;
+}
+
+.libcal-gantt-agenda__link {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  /* 44px is the widely-used minimum comfortable touch target size. */
+  min-height: 44px;
+  padding: 0.6rem 0.375rem;
+  border-radius: 4px;
+  text-decoration: none;
+  color: inherit;
+}
+
+a.libcal-gantt-agenda__link:hover,
+a.libcal-gantt-agenda__link:focus {
+  background: var(--libcal-gantt-header-bg);
+}
+
+.libcal-gantt-agenda__time {
+  flex: 0 0 auto;
+  min-width: 6.5rem;
+  padding-top: 0.1rem;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  color: #555;
+}
+
+.libcal-gantt-agenda__details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.libcal-gantt-agenda__title {
+  font-weight: 500;
+  overflow-wrap: break-word;
+}
+
+.libcal-gantt-agenda__location {
+  font-size: 0.8125rem;
+  color: #666;
+  overflow-wrap: break-word;
+}
+
+@media (max-width: 768px) {
+  .libcal-gantt-chart {
+    overflow-x: visible;
+    -webkit-overflow-scrolling: auto;
+  }
+
+  .libcal-gantt {
+    display: none;
+  }
+
+  .libcal-gantt-agenda {
+    display: block;
+  }
+}
+
+/* On coarse (touch) pointers, give bars in the wide-screen grid a little
+   more breathing room so they stay comfortably tappable on touch laptops/
+   large tablets that are still wide enough to show the grid view. */
+@media (pointer: coarse) {
+  .libcal-gantt__bar {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+}
+
+/**
+ * "Show more weekdays" control, appended below both views.
+ */
+.libcal-gantt-chart__more {
+  margin-top: 1rem;
+  text-align: center;
+}
+
+.libcal-gantt-chart__more-button {
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 0.55rem 1.25rem;
+  border: 1px solid var(--libcal-gantt-bar-bg);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--libcal-gantt-bar-bg);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.libcal-gantt-chart__more-button:hover:not(:disabled),
+.libcal-gantt-chart__more-button:focus:not(:disabled) {
+  background: var(--libcal-gantt-bar-bg);
+  color: #fff;
+}
+
+.libcal-gantt-chart__more-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.libcal-gantt-chart__more-error {
+  margin: 0.5rem 0 0;
+  color: #a52121;
+  font-size: 0.8125rem;
+}
