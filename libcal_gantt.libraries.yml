@@ -1,5 +1,23 @@
 gantt-timeline:
-  version: 1.x
+  # NO `version:` key, deliberately.
+  #
+  # Drupal's CSS and JS renderers bust caches DIFFERENTLY, and the
+  # difference bit hard here. CssCollectionRenderer always appends the
+  # rotating global cache-buster (`?tlf8ok`), but JsCollectionRenderer
+  # appends `?v=<version>` whenever a library declares a version and only
+  # falls back to the rotating string when the version is unknown (-1).
+  #
+  # So `version: 1.x` froze the JS URL at `gantt-timeline.js?v=1.x`
+  # forever: every deploy served a byte-different file at a
+  # byte-identical URL, so browsers and any proxy in front of the site
+  # kept the stale copy no matter how many times the site cache was
+  # rebuilt. The CSS updated on deploy and the JS did not - which reads
+  # exactly like "my PHP changes work and my JS changes don't".
+  #
+  # Omitting the key makes the version unknown, so the JS gets the same
+  # rotating query string the CSS already got and `drush cr` busts both.
+  # If you'd rather keep a real version here, that's fine - but then you
+  # must bump it on every JS change, or you are back to this bug.
   js:
     js/gantt-timeline.js: {}
   css:

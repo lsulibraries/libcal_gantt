@@ -59,3 +59,35 @@ libcal_gantt.settings:
       sequence:
         type: integer
         label: 'Location ID (lid)'
+
+# Per-block-instance DISPLAY settings, as opposed to the feed settings
+# above. Split this way so the same LibCal feed can be placed twice - a
+# homepage teaser and a full grid on the events page - with independent
+# presentation. Without this schema entry Drupal reports the block config
+# as untyped, which fails the strict-config test and breaks translation of
+# the values.
+block.settings.libcal_gantt_chart:
+  type: block_settings
+  label: 'LibCal Events Gantt Chart block'
+  mapping:
+    render_mode:
+      type: string
+      label: 'Display style'
+    chart_title:
+      type: label
+      label: 'Heading'
+    homepage_days:
+      type: integer
+      label: 'Days shown before "Show more days"'
+    full_calendar_url:
+      type: string
+      label: 'Full calendar URL'
+    show_legend:
+      type: boolean
+      label: 'Show legend'
+    theme:
+      type: string
+      label: 'Theme'
+    allow_theme_toggle:
+      type: boolean
+      label: 'Show light/dark toggle to visitors'
