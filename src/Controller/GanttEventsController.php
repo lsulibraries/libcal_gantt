@@ -90,7 +90,11 @@ class GanttEventsController extends ControllerBase {
 
     $calendarList = [];
     foreach ($calendars as $key => $calendar) {
-      $calendarList[] = ['id' => $key, 'label' => $calendar['label']];
+      $calendarList[] = [
+        'id' => $key,
+        'label' => $calendar['label'],
+        'showHours' => $calendar['showHours'] ?? TRUE,
+      ];
     }
 
     // Lets the "show more" button in the front end page forward through
@@ -114,10 +118,33 @@ class GanttEventsController extends ControllerBase {
 
     $rawEvents = $this->libcalClient->getUpcomingEvents($selectedCalendarIds, $dateStart, $spanDays);
     $daySet = array_flip($days);
-    $events = [];
 
+    // Weekends are never displayed as their own day columns/sections (the
+    // chart's whole premise is "next N weekdays") but a visitor still
+    // reasonably wants to know what's happening over the weekend when
+    // they're looking at, say, Friday's column right next to the
+    // following Monday's - both a location's weekend hours AND whether
+    // anything is actually scheduled. buildWeekendMarkers() finds every
+    // Friday -> Monday gap in the weekday list just built; the Saturday/
+    // Sunday dates those gaps bracket are folded into $eventDaySet below
+    // so prepareEvent() computes segments for them too (a real event
+    // that only touches a weekend day would otherwise be silently
+    // dropped, since $daySet on its own is weekday-only) - this is a
+    // SEPARATE set from $daySet itself, which stays weekday-only for
+    // building hours below, since the weekday grid/agenda only ever look
+    // days up by date directly and extra weekend keys there would just
+    // be unused clutter, not a bug, but there's no reason to carry them.
+    $weekends = $this->buildWeekendMarkers($days);
+    $weekendDaySet = [];
+    foreach ($weekends as $weekend) {
+      $weekendDaySet[$weekend['saturday']] = TRUE;
+      $weekendDaySet[$weekend['sunday']] = TRUE;
+    }
+    $eventDaySet = $daySet + $weekendDaySet;
+
+    $events = [];
     foreach ($rawEvents as $event) {
-      $prepared = $this->prepareEvent($event, $daySet, $timezone, $dayStartHour, $dayEndHour, $onlineKeywords, $campusRows, $onlineRowLabel);
+      $prepared = $this->prepareEvent($event, $eventDaySet, $timezone, $dayStartHour, $dayEndHour, $onlineKeywords, $campusRows, $onlineRowLabel);
       if ($prepared) {
         $events[] = $prepared;
       }
@@ -127,6 +154,49 @@ class GanttEventsController extends ControllerBase {
     $campusHoursLids = (array) ($config->get('campus_hours_lids') ?: []);
     $hours = $this->prepareAllHours($campusRows, $campusHoursFeedUrls, $campusHoursLids, (string) $config->get('hours_feed_url'), $daySet, $timezone);
 
+    // The hours pipeline is re-run (unchanged, just with $weekendDaySet
+    // instead of the weekday $daySet) against the Saturday/Sunday dates
+    // those gaps bracket, per row - same per-location Hours feed each row
+    // already uses for its weekday captions, not a single combined note,
+    // since two rows here can have genuinely different weekend hours (see
+    // SettingsForm's per-row Hours feed URL/lid fields). This costs no
+    // extra HTTP requests to LibCal: LibCalClient::getHours() caches a
+    // feed's full raw payload per URL regardless of which days it's being
+    // filtered for, so re-running prepareAllHours() with a different
+    // $daySet just re-parses the already-cached response.
+    $weekendHours = $weekendDaySet
+      ? $this->prepareAllHours($campusRows, $campusHoursFeedUrls, $campusHoursLids, (string) $config->get('hours_feed_url'), $weekendDaySet, $timezone)
+      : [];
+
+    // Attaches, to each weekend marker, which rows (if any) have a real
+    // event scheduled that Saturday/Sunday - built from $events now that
+    // they've been prepared with weekend segments included (see
+    // $eventDaySet above). Keyed by row label so the front end can tell,
+    // per location, whether that weekend is "empty" (nothing scheduled -
+    // show hours) or has an event (show it) without re-deriving it
+    // itself. An event that also touches a weekday (e.g. Friday through
+    // Saturday) still shows normally in that weekday's column AND is
+    // listed here - both are correct, it really is happening both places.
+    foreach ($weekends as &$weekend) {
+      $weekendEvents = [];
+      foreach ($events as $event) {
+        foreach ([$weekend['saturday'], $weekend['sunday']] as $weekendDay) {
+          if (isset($event['segments'][$weekendDay])) {
+            $weekendEvents[$event['row']][] = [
+              'title' => $event['title'],
+              'location' => $event['location'],
+              'url' => $event['url'],
+              'startLabel' => $event['startLabel'],
+              'endLabel' => $event['endLabel'],
+              'day' => $weekendDay,
+            ];
+          }
+        }
+      }
+      $weekend['events'] = $weekendEvents;
+    }
+    unset($weekend);
+
     $response = new JsonResponse([
       'days' => $days,
       'dayStartHour' => $dayStartHour,
@@ -134,6 +204,8 @@ class GanttEventsController extends ControllerBase {
       'rows' => $rowLabels,
       'events' => $events,
       'hours' => $hours,
+      'weekends' => $weekends,
+      'weekendHours' => $weekendHours,
       'calendars' => $calendarList,
       'calendar' => $selectedCalendarKey,
       'offset' => $offset,
@@ -173,6 +245,63 @@ class GanttEventsController extends ControllerBase {
     }
 
     return $days;
+  }
+
+  /**
+   * Finds every Friday -> Monday gap in an ordered list of weekday Y-m-d
+   * strings (as returned by buildWeekdayList()) and returns the weekend
+   * dates each gap brackets.
+   *
+   * A weekday-only list produced by buildWeekdayList() always has either a
+   * 1-calendar-day gap between consecutive entries (an ordinary weekday to
+   * the next) or a 3-calendar-day gap (Friday to the following Monday,
+   * with Saturday and Sunday skipped in between) - never anything else,
+   * since weekends are the only days that method ever omits. That makes a
+   * gap greater than 1 day an unambiguous, cheap way to detect exactly a
+   * weekend boundary without needing to inspect each date's actual day of
+   * week.
+   *
+   * There is normally at most one marker per typical page (the default
+   * "10 weekdays" window spans almost exactly two calendar weeks, so it
+   * usually contains exactly one Friday -> Monday transition), but a
+   * longer configured window, or a page that happens to span more than
+   * one weekend, can produce more than one - the front end positions each
+   * marker independently rather than assuming there's only ever one.
+   *
+   * @param array<int, string> $days
+   *   Ordered weekday Y-m-d strings.
+   *
+   * @return array<int, array{after: string, saturday: string, sunday: string}>
+   *   One entry per weekend gap found, in the same order as $days -
+   *   `after` is the last weekday before the gap (a Friday, in every
+   *   normal case), so the front end knows exactly where to insert the
+   *   weekend accessory column relative to the real day columns it
+   *   already has.
+   */
+  protected function buildWeekendMarkers(array $days): array {
+    $markers = [];
+    $count = count($days);
+
+    for ($i = 0; $i < $count - 1; $i++) {
+      try {
+        $current = new \DateTime($days[$i]);
+        $next = new \DateTime($days[$i + 1]);
+      }
+      catch (\Exception) {
+        continue;
+      }
+
+      $gap = (int) $current->diff($next)->days;
+      if ($gap > 1) {
+        $markers[] = [
+          'after' => $days[$i],
+          'saturday' => (clone $current)->modify('+1 day')->format('Y-m-d'),
+          'sunday' => (clone $current)->modify('+2 day')->format('Y-m-d'),
+        ];
+      }
+    }
+
+    return $markers;
   }
 
   /**
@@ -340,6 +469,26 @@ class GanttEventsController extends ControllerBase {
       $url = is_array($event['url']) ? (string) ($event['url']['public'] ?? '') : (string) $event['url'];
     }
 
+    // LibCal's "Featured image" field (set per-event in the admin, shown
+    // in the public listing/widget) - a plain absolute URL when present,
+    // never an array on any response seen so far. Passed straight
+    // through to the front end for the desktop grid's image-backed bars
+    // (see gantt-timeline.js's buildBar()/buildSpanningBar()); the mobile
+    // agenda and the weekend accessory column never use it, since a
+    // banner image doesn't add anything readable at either of those
+    // widths. `imageAlt` is LibCal's own alt text for the image, when the
+    // event has one set - not currently consumed by the front end (the
+    // image is applied as a decorative CSS background, not an <img>), but
+    // returned in case a future revision wants it for an accessible label.
+    $image = '';
+    if (!empty($event['featured_image'])) {
+      $image = is_array($event['featured_image']) ? (string) ($event['featured_image']['url'] ?? '') : (string) $event['featured_image'];
+    }
+    $imageAlt = '';
+    if (!empty($event['featured_image_alt_text'])) {
+      $imageAlt = (string) $event['featured_image_alt_text'];
+    }
+
     return [
       'id' => $event['id'] ?? NULL,
       'title' => (string) ($event['title'] ?? 'Untitled event'),
@@ -347,6 +496,8 @@ class GanttEventsController extends ControllerBase {
       'isOnline' => $isOnline,
       'row' => $row,
       'url' => $url,
+      'image' => $image,
+      'imageAlt' => $imageAlt,
       'startLabel' => $start->format('g:i A'),
       'endLabel' => $end->format('g:i A'),
       'segments' => $segments,
