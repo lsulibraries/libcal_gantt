@@ -146,7 +146,7 @@ class GanttChartBlock extends BlockBase {
       '#type' => 'checkbox',
       '#title' => $this->t('Show light/dark toggle to visitors'),
       '#default_value' => $config['allow_theme_toggle'],
-      '#description' => $this->t('Adds a small toggle button. The choice is remembered in the browser for return visits.'),
+      '#description' => $this->t('Adds a small toggle button. The choice is remembered in the browser for return visits. Ignored in Homepage mode, which always uses the theme chosen above: that block is a panel inside a page whose colours it does not control, so a visitor-flipped light card would sit awkwardly on a dark banner.'),
     ];
 
     return $form;

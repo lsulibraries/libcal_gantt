@@ -119,6 +119,38 @@
   --libcal-gantt-closed-color: #f07a7a;
   --libcal-gantt-error-color: #ff9090;
 
+  /* Venue tag colours, used by the homepage variant's location tags (see
+     section 13b). Three hues to separate the three places events actually
+     happen, deliberately chosen from OUTSIDE the two colours that already
+     mean something in this component: purple is the event bar and gold is
+     today/ongoing, so borrowing either for a venue would make "where" look
+     like "when". Purple is the one exception - the Main Library is the
+     default place and the brand colour is the quietest thing a tag can be,
+     so it reads as the unmarked case while Hill and Online read as
+     departures from it.
+
+     Each is a text/fill/edge triple rather than a solid fill: a row of
+     saturated blocks down a card competes with the event titles, which are
+     the thing being scanned. All six text colours clear 4.5:1 against the
+     surface they sit on. */
+  --libcal-gantt-venue-main-color: #b79cf0;
+  --libcal-gantt-venue-main-bg: rgba(130, 85, 204, 0.18);
+  --libcal-gantt-venue-main-edge: rgba(130, 85, 204, 0.55);
+
+  --libcal-gantt-venue-hill-color: #f0a3c8;
+  --libcal-gantt-venue-hill-bg: rgba(214, 93, 152, 0.16);
+  --libcal-gantt-venue-hill-edge: rgba(214, 93, 152, 0.5);
+
+  --libcal-gantt-venue-online-color: #7fd8d0;
+  --libcal-gantt-venue-online-bg: rgba(64, 180, 170, 0.16);
+  --libcal-gantt-venue-online-edge: rgba(64, 180, 170, 0.5);
+
+  /* The fallback for any location this module has not been taught to
+     recognise - see venueKey(). Neutral, but still shaped like a tag. */
+  --libcal-gantt-venue-other-color: var(--libcal-gantt-text-subtle);
+  --libcal-gantt-venue-other-bg: transparent;
+  --libcal-gantt-venue-other-edge: var(--libcal-gantt-border);
+
   /* The diagonal hatch used for an empty weekend cell and a closed-all-day
      band. Two tones, light-on-dark here; swap for rgba(0,0,0,...) on a
      light palette. */
@@ -247,6 +279,21 @@
 
   --libcal-gantt-button-bg: #f4f1fa;
   --libcal-gantt-button-active-color: #ffffff;
+
+  /* Venue tags again, inverted: the dark theme's pale tints are ink-light
+     and vanish on white, so each becomes a deep hue on a pale wash of
+     itself. Same three families, same 4.5:1 floor. */
+  --libcal-gantt-venue-main-color: #461d7c;
+  --libcal-gantt-venue-main-bg: #f0eaff;
+  --libcal-gantt-venue-main-edge: #c3aee9;
+
+  --libcal-gantt-venue-hill-color: #8c2b5c;
+  --libcal-gantt-venue-hill-bg: #fdeef5;
+  --libcal-gantt-venue-hill-edge: #e9b6cf;
+
+  --libcal-gantt-venue-online-color: #0f5f59;
+  --libcal-gantt-venue-online-bg: #e6f7f5;
+  --libcal-gantt-venue-online-edge: #a9dcd7;
 }
 
 /* =========================================================================
@@ -1316,8 +1363,15 @@ a.libcal-gantt-agenda__link:focus {
 .libcal-gantt-home {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 16px;
+
+  /* A BANDED container, not a padded card. The header and the status
+     footer are full-bleed strips carrying their own background, divided
+     from the day columns by edge-to-edge rules - which is why there is no
+     padding and no gap here: every region supplies its own. Padding on
+     the panel instead pulls those rules inboard, the bands lose their
+     background edges, and the whole thing reads as one soft card with
+     hairlines in it rather than as a header/body/footer table. */
+  overflow: hidden;
   border: 1px solid var(--libcal-gantt-border);
   border-radius: 8px;
   background: var(--libcal-gantt-block-bg);
@@ -1329,11 +1383,17 @@ a.libcal-gantt-agenda__link:focus {
 .libcal-gantt-home__header {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+
+  /* `baseline` so the title and the control row sit on one optical line
+     even though they are wildly different type sizes; `flex-end` aligned
+     their boxes instead, which floated the buttons below the title's
+     descenders. */
+  align-items: baseline;
   justify-content: space-between;
   gap: 8px 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--libcal-gantt-border-subtle);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--libcal-gantt-border);
+  background: var(--libcal-gantt-header-bg);
 }
 
 .libcal-gantt-home__headings {
@@ -1353,6 +1413,13 @@ a.libcal-gantt-agenda__link:focus {
   font-size: 0.82em;
 }
 
+/* Same default-to-the-long-form reasoning as the column heads; the swap
+   itself lives with the other chart-root breakpoints in section 14b, at
+   the 680px step where the rest of the module starts economising. */
+.libcal-gantt-home__range-short {
+  display: none;
+}
+
 .libcal-gantt-home__controls {
   display: flex;
   flex-wrap: wrap;
@@ -1368,14 +1435,31 @@ a.libcal-gantt-agenda__link:focus {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 14px;
+  padding: 5px 13px;
+  border: 1px solid var(--libcal-gantt-today-accent);
   border-radius: 999px;
-  background: var(--libcal-gantt-bar-bg);
-  color: var(--libcal-gantt-bar-color);
-  font-size: 0.82em;
-  font-weight: 600;
+
+  /* Outlined in gold, not filled with bar purple. Filled, it was the
+     same colour and shape as an event bar and read as one of them -
+     a link that looks like data. Outlined, it reads as the single action
+     in the header. */
+  background: none;
+  color: var(--libcal-gantt-today-accent);
+  font-size: 0.78em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   text-decoration: none;
   white-space: nowrap;
+}
+
+/* Matches the pattern in section 2b: the host region declares its own
+   link colour, so the CTA needs the element-qualified selector to keep
+   its gold in all three states. */
+.libcal-gantt-chart a.libcal-gantt-home__cta,
+.libcal-gantt-chart a.libcal-gantt-home__cta:hover,
+.libcal-gantt-chart a.libcal-gantt-home__cta:focus {
+  color: var(--libcal-gantt-today-accent);
 }
 
 .libcal-gantt-home__cta:hover,
@@ -1396,7 +1480,16 @@ a.libcal-gantt-agenda__link:focus {
 .libcal-gantt-home__days {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), minmax(0, 1fr)));
-  gap: 12px;
+
+  /* Columns divided by a hairline, not floated apart as separate cards.
+     The 1px gap IS the divider: this element's background shows through
+     it and each column paints its own background over everything else.
+     Done this way rather than with `border-left` because it also draws
+     the rule between STACKED columns once the grid collapses to one
+     track on a narrow container - no extra breakpoint, and no stray
+     border to strip off the first column. */
+  gap: 1px;
+  background: var(--libcal-gantt-border-subtle);
 }
 
 /* `auto-fit` with a nested minmax() is not universally supported; the
@@ -1411,36 +1504,91 @@ a.libcal-gantt-agenda__link:focus {
   flex-direction: column;
   gap: 8px;
   min-width: 0;
-  padding: 12px;
-  border: 1px solid var(--libcal-gantt-border-subtle);
-  border-radius: 6px;
-  background: var(--libcal-gantt-surface);
+
+  /* No border and no radius. Grid items stretch to the tallest row, so a
+     bordered box around every column turns that stretch into a large
+     drawn-out empty rectangle on a quiet day - the busiest column sets
+     the height and the emptiest one advertises it. Undrawn, the same
+     unused space is just banner, and only the hairline gap is visible. */
+  padding: 12px 14px;
+  background: var(--libcal-gantt-block-bg);
+
+  /* Its own container, so the date in the head can respond to how wide
+     THIS CARD ended up rather than to the viewport. The two are only
+     loosely related: the grid fits as many 220px-minimum columns as the
+     block's slot allows, so a 900px slot gives four cramped cards while a
+     500px slot gives two roomy ones and a phone gives one full-width
+     card. A viewport breakpoint would abbreviate the date on the phone -
+     where there is the most room for it - and leave it wrapping in the
+     four-column case. */
+  container-type: inline-size;
+  container-name: libcal-gantt-day;
 }
 
 .libcal-gantt-home__day-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--libcal-gantt-border-subtle);
+
+  /* The badge belongs beside the date, not shoved to the opposite edge.
+     At column width `space-between` stranded it against the divider,
+     where it read as a control belonging to the next column rather than
+     as a label on this date. The rule underneath went too: the day name
+     is already set apart by weight, case and tracking. */
+  justify-content: flex-start;
+  gap: 6px;
 }
 
 .libcal-gantt-home__day-name {
-  color: var(--libcal-gantt-header-color);
-  font-size: 0.9em;
+  /* A small tracked-out muted label, not a heading. At heading weight and
+     near-white it competed with the event titles below it, and on the
+     emptiest column it was the loudest thing in the panel. */
+  color: var(--libcal-gantt-text-muted);
+  font-size: 0.74em;
   font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* The long form ("WEDNESDAY, SEP 30") is the default and the short form
+   ("WED, SEP 30") is the exception, so a browser without container query
+   support gets the spelled-out date - the same thing it got before this
+   pair existed - rather than the abbreviation as a permanent state.
+
+   240px is measured, not guessed: set at this size, uppercase and tracked
+   out, the long form runs about 146px, and the Today badge and the card's
+   own padding claim another 86px. Below that the head wraps to two lines
+   on today's card only, which is what made the three columns start their
+   event lists at different heights. */
+.libcal-gantt-home__day-name-short {
+  display: none;
+}
+
+@container libcal-gantt-day (max-width: 240px) {
+  .libcal-gantt-home__day-name-long {
+    display: none;
+  }
+
+  .libcal-gantt-home__day-name-short {
+    display: inline;
+  }
 }
 
 .libcal-gantt-home__today-badge {
   flex: 0 0 auto;
   padding: 2px 8px;
   border-radius: 999px;
-  background: var(--libcal-gantt-today-header-bg);
-  color: var(--libcal-gantt-today-header-color);
+
+  /* Gold fill, dark ink - the same pairing the grid's own Today badge
+     uses (see .libcal-gantt__day-header-today). This was wired to the
+     today HEADER tokens, which are the purple cell-header pair, so the
+     identical badge came out purple-on-white here and gold on /events,
+     and --libcal-gantt-today-badge-color sat defined but unused by this
+     variant. One badge, one pairing, both render modes. */
+  background: var(--libcal-gantt-today-accent);
+  color: var(--libcal-gantt-today-badge-color);
   font-size: 0.68em;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
@@ -1448,7 +1596,9 @@ a.libcal-gantt-agenda__link:focus {
    the grid's today column uses (section 11) reading from the same tokens -
    one highlight mechanism across both variants, not two. */
 .libcal-gantt-home__day.today_date {
-  border-color: var(--libcal-gantt-today-edge);
+  /* The gold inset rule along the top edge is the whole highlight now.
+     `border-color` went with the border above; a full gold outline round
+     one column fought the panel's own border for attention. */
   background: var(--libcal-gantt-today-cell-bg);
   box-shadow: inset 0 3px 0 var(--libcal-gantt-today-accent);
 }
@@ -1466,7 +1616,6 @@ a.libcal-gantt-agenda__link:focus {
 .libcal-gantt-home__list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1476,32 +1625,49 @@ a.libcal-gantt-agenda__link:focus {
   min-width: 0;
 }
 
+/* A hairline between events rather than a gap between filled blocks.
+   On the first item there is nothing to divide from, hence the sibling
+   combinator instead of a border plus a `:first-child` reset. */
+.libcal-gantt-home__item + .libcal-gantt-home__item {
+  border-top: 1px solid var(--libcal-gantt-border-subtle);
+}
+
 .libcal-gantt-home__link {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 7px 9px;
-  border-left: 3px solid var(--libcal-gantt-bar-bg);
-  border-radius: var(--libcal-gantt-bar-radius);
-  background: var(--libcal-gantt-header-bg);
+
+  /* Time in a fixed left column with the title and location beside it.
+     Stacked vertically inside a filled block with a coloured left edge,
+     every event was a bar borrowed from the grid - and that is the wrong
+     metaphor for this variant. A bar encodes duration and position on a
+     timeline; the homepage variant is a list, where nothing is
+     proportional to anything and a bar promises information the layout
+     cannot deliver. */
+  flex-direction: row;
+  gap: 10px;
+  padding: 6px 0;
+  background: none;
   color: var(--libcal-gantt-text);
   text-decoration: none;
 }
 
 a.libcal-gantt-home__link:hover,
 a.libcal-gantt-home__link:focus {
-  background: var(--libcal-gantt-bar-bg);
-  color: var(--libcal-gantt-bar-color);
+  background: var(--libcal-gantt-header-bg);
 }
 
-a.libcal-gantt-home__link:hover .libcal-gantt-home__item-location,
-a.libcal-gantt-home__link:focus .libcal-gantt-home__item-location,
-a.libcal-gantt-home__link:hover .libcal-gantt-home__time,
-a.libcal-gantt-home__link:focus .libcal-gantt-home__time {
-  color: var(--libcal-gantt-bar-color);
+/* Underline the title on hover instead of repainting the whole row. With
+   no fill to invert, recolouring the muted text to the bar's ink just
+   made the row flash. */
+a.libcal-gantt-home__link:hover .libcal-gantt-home__item-title,
+a.libcal-gantt-home__link:focus .libcal-gantt-home__item-title {
+  text-decoration: underline;
 }
 
 .libcal-gantt-home__time {
+  /* Fixed track so the titles start on a common left edge down the
+     column; tabular figures so the times themselves line up inside it. */
+  flex: 0 0 64px;
+  padding-top: 1px;
   color: var(--libcal-gantt-text-muted);
   font-size: 0.74em;
   font-variant-numeric: tabular-nums;
@@ -1550,10 +1716,69 @@ a.libcal-gantt-home__link:focus .libcal-gantt-home__time {
   line-height: 1.3;
 }
 
+/* Venue tag + room text on one line. The row is allowed to shrink but
+   never to wrap: two lines of location under a two-line title makes the
+   location the biggest thing in the item, which inverts the hierarchy the
+   card is built on. */
 .libcal-gantt-home__item-location {
-  overflow: hidden;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 3px;
   color: var(--libcal-gantt-text-muted);
   font-size: 0.74em;
+}
+
+/* The venue itself, as a tag. Small caps-styling and a border rather than
+   a size increase: it has to be findable at a glance without out-shouting
+   the event title directly above it, and shape reads faster than size at
+   this scale.
+
+   `flex: 0 1 auto` with its own ellipsis, so a long venue name gives
+   ground to the room text instead of pushing it out of the card - and
+   truncates itself rather than overflowing when there is genuinely no
+   room. Colour comes from the data-venue rules below. */
+.libcal-gantt-home__venue {
+  flex: 0 1 auto;
+  overflow: hidden;
+  padding: 1px 6px;
+  border: 1px solid var(--libcal-gantt-venue-other-edge);
+  border-radius: 4px;
+  background: var(--libcal-gantt-venue-other-bg);
+  color: var(--libcal-gantt-venue-other-color);
+  font-size: 0.92em;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.libcal-gantt-home__venue[data-venue='main'] {
+  border-color: var(--libcal-gantt-venue-main-edge);
+  background: var(--libcal-gantt-venue-main-bg);
+  color: var(--libcal-gantt-venue-main-color);
+}
+
+.libcal-gantt-home__venue[data-venue='hill'] {
+  border-color: var(--libcal-gantt-venue-hill-edge);
+  background: var(--libcal-gantt-venue-hill-bg);
+  color: var(--libcal-gantt-venue-hill-color);
+}
+
+.libcal-gantt-home__venue[data-venue='online'] {
+  border-color: var(--libcal-gantt-venue-online-edge);
+  background: var(--libcal-gantt-venue-online-bg);
+  color: var(--libcal-gantt-venue-online-color);
+}
+
+/* The room, which only matters after the venue has been read - so it stays
+   the muted subtitle the whole location line used to be, and it is the
+   part that gives way first when the card is narrow. */
+.libcal-gantt-home__room {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1566,8 +1791,12 @@ a.libcal-gantt-home__link:focus .libcal-gantt-home__time {
 }
 
 .libcal-gantt-home__day-hours {
-  margin: auto 0 0;
-  padding-top: 6px;
+  /* Directly under "Nothing scheduled", not pushed to the floor of the
+     column by `margin-top: auto`. Pinned to the bottom it drew a line
+     under the full height of the tallest column and turned the stretch
+     into a labelled void. */
+  margin: 0;
+  padding-top: 2px;
   color: var(--libcal-gantt-text-subtle);
   font-size: 0.72em;
 }
@@ -1632,16 +1861,30 @@ a.libcal-gantt-home__weekend-event:focus {
 .libcal-gantt-home__status {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--libcal-gantt-border-subtle);
+  align-items: center;
+  gap: 6px 16px;
+
+  /* The second band: own background, full-bleed rule above it, padding
+     matching the header's so the two strips frame the columns. */
+  padding: 9px 16px;
+  border-top: 1px solid var(--libcal-gantt-border);
+  background: var(--libcal-gantt-header-bg);
 }
 
 .libcal-gantt-home__status-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  color: var(--libcal-gantt-text-muted);
   font-size: 0.78em;
+}
+
+/* The building name at full ink and full weight, the hours phrase beside
+   it muted - the name is what a visitor scans this strip for, and the
+   phrase is the answer they read once they have found it. */
+.libcal-gantt-home__status-row {
+  color: var(--libcal-gantt-text);
+  font-weight: 700;
 }
 
 .libcal-gantt-home__status-dot {
@@ -1651,12 +1894,17 @@ a.libcal-gantt-home__weekend-event:focus {
   background: currentColor;
 }
 
-.libcal-gantt-home__status-pill.now_open {
-  color: var(--libcal-gantt-open-color);
+/* Only the dot carries the status colour. Colouring the whole pill made
+   two calm facts look like two alerts, and green sentence text on the
+   banner is the loudest thing in the footer. The dot paints from
+   `currentColor` by default, so these override its background directly
+   rather than inheriting down. */
+.libcal-gantt-home__status-pill.now_open .libcal-gantt-home__status-dot {
+  background: var(--libcal-gantt-open-color);
 }
 
-.libcal-gantt-home__status-pill.now_closed {
-  color: var(--libcal-gantt-closed-color);
+.libcal-gantt-home__status-pill.now_closed .libcal-gantt-home__status-dot {
+  background: var(--libcal-gantt-closed-color);
 }
 
 /* =========================================================================
@@ -1863,6 +2111,19 @@ a.libcal-gantt-home__weekend-event:focus {
     padding-left: 0.35rem;
     padding-right: 0.35rem;
   }
+
+  /* The homepage header's date range drops to abbreviated weekdays and
+     months here. Nothing about the grid above applies to that variant,
+     but this is the width at which the block as a whole is short of
+     room, and having one narrow-layout step rather than two is worth more
+     than a threshold tuned to this one line. */
+  .libcal-gantt-home__range-long {
+    display: none;
+  }
+
+  .libcal-gantt-home__range-short {
+    display: inline;
+  }
 }
 
 /*
@@ -1984,6 +2245,34 @@ html .largeBanner .bnContainer:has(.libcal-gantt-chart) {
    items. */
 .largeBanner .bannerMenus > .libcal-gantt-chart {
   grid-column: 1 / -1;
+}
+
+/* ---- The host theme hides <header> elements --------------------------
+   Two things vanished from the homepage variant while everything around
+   them rendered: the header bar (title, date range, tabs, theme toggle,
+   "Full calendar" link) and each card's day name plus Today badge. Those
+   are the ONLY two <header> elements the module builds - see
+   buildHomepageHeader() and buildHomepageDayCard() - and nothing else in
+   the file uses one. Every sibling that is a <section>, <article>, <ul>
+   or <p> came through untouched.
+
+   Drupal's node templates emit an empty <header> (visible in this page's
+   own `node--14.html.twig` output), and themes routinely suppress it with
+   a blanket `display: none`. This block sits inside
+   `article.node.largeBannerContainer`, so any such rule scoped to `.node`
+   or to the banner catches our two headers as collateral damage.
+
+   Re-asserted rather than renamed: <header> is the correct element for
+   both - a heading with its controls, and a card's own title bar - and
+   the grid variant on /events uses no <header> at all, which is why this
+   only ever showed up in the banner. Deliberately NOT scoped to
+   `.largeBanner`, because the suppressing rule may well be keyed to
+   `.node` and would then follow this block anywhere inside a node. Plain
+   specificity is enough to win against a `.node header` style rule; if
+   the theme declares it `!important`, this needs `!important` too. */
+html .libcal-gantt-chart .libcal-gantt-home__header,
+html .libcal-gantt-chart .libcal-gantt-home__day-head {
+  display: flex;
 }
 
 div#block-origami-libcaleventsganttchart {

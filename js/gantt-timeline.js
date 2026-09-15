@@ -709,12 +709,28 @@
     if (days.length) {
       const range = document.createElement('p');
       range.className = 'libcal-gantt-home__range';
-      range.textContent = days.length === 1
-        ? formatDayLabel(days[0], true)
-        : Drupal.t('@from through @to', {
-          '@from': formatDayLabel(days[0], true),
-          '@to': formatDayLabel(days[days.length - 1], true),
-        });
+      // Long and short forms of the range, swapped by the chart-root
+      // container query at the existing 680px step - the width at which
+      // every other part of this module already starts economising. Same
+      // CSS-decides-it reasoning as the column heads in
+      // buildHomepageDayCard().
+      const rangeOf = (endpoint) => (days.length === 1
+        ? endpoint(days[0])
+        : Drupal.t('@from – @to', {
+          '@from': endpoint(days[0]),
+          '@to': endpoint(days[days.length - 1]),
+        }));
+
+      // "Central" is stated rather than derived from the visitor's clock,
+      // and that is deliberate: every time label in this block is
+      // formatted server-side in the SITE's configured timezone (see
+      // todayString()), so a visitor reading this from another timezone is
+      // still looking at library-local times. Reading the browser's zone
+      // here would confidently mislabel them. It goes through Drupal.t()
+      // so a library on another campus can restate it through interface
+      // translation without touching this file.
+      appendRangeForm(range, 'libcal-gantt-home__range-long', rangeOf(formatRangeEndpoint));
+      appendRangeForm(range, 'libcal-gantt-home__range-short', rangeOf((day) => formatDayLabel(day, false)));
       headings.appendChild(range);
     }
 
@@ -728,11 +744,13 @@
       controls.appendChild(tabs);
     }
 
-    const toggle = buildThemeToggle(container, endpoint, state);
-    if (toggle) {
-      controls.appendChild(toggle);
-    }
-
+    // No theme toggle in this variant, unlike the grid header (see
+    // renderChart()). The homepage block is a teaser embedded in a page
+    // whose own palette it does not control: flipping this one panel to a
+    // light card leaves it fighting the banner it sits on, and a visitor
+    // who wants a light calendar is one click from the full one. The
+    // "Appearance" setting still chooses this block's fixed theme - only
+    // the visitor-facing switch is withheld here.
     if (state.options.fullCalendarUrl) {
       const link = document.createElement('a');
       link.className = 'libcal-gantt-home__cta';
@@ -778,7 +796,28 @@
 
     const name = document.createElement('span');
     name.className = 'libcal-gantt-home__day-name';
-    name.textContent = formatDayLabel(day, true);
+    // Two forms of the same date, one of which a container query on the
+    // card hides (see section 13b in the stylesheet). The choice has to be
+    // made in CSS rather than decided here, because what runs out is the
+    // CARD's width, and that depends on how many columns the grid fits
+    // into whatever slot the block was placed in - there is no viewport
+    // breakpoint that corresponds to it, and no resize event on the
+    // element itself to hang a measurement off.
+    //
+    // Both forms sit in the DOM. That is safe for assistive tech because
+    // the hidden one is hidden with `display: none`, which takes it out of
+    // the accessibility tree as well as off the screen - a screen reader
+    // announces one date, not both.
+    const nameLong = document.createElement('span');
+    nameLong.className = 'libcal-gantt-home__day-name-long';
+    nameLong.textContent = formatHomepageDayName(day);
+    name.appendChild(nameLong);
+
+    const nameShort = document.createElement('span');
+    nameShort.className = 'libcal-gantt-home__day-name-short';
+    nameShort.textContent = formatDayLabel(day, false);
+    name.appendChild(nameShort);
+
     head.appendChild(name);
 
     if (status === 'today') {
@@ -882,7 +921,7 @@
       time.textContent = Drupal.t('Ongoing');
     }
     else {
-      time.textContent = event.startLabel + '–' + event.endLabel;
+      time.textContent = formatCompactTimeRange(event.startLabel, event.endLabel);
     }
     link.appendChild(time);
 
@@ -894,11 +933,44 @@
     title.textContent = event.title;
     body.appendChild(title);
 
+    // Falls back to the event's row label ("Main Library", or whatever the
+    // online row is called) when LibCal gives no specific room - usually
+    // the case for online events, which have no physical location field to
+    // fill in.
+    //
+    // Split into a venue TAG plus plain room text rather than one run of
+    // muted grey. The grid variant answers "where is this?" structurally,
+    // with a labelled lane per location; this variant has no lanes - three
+    // date columns, every location mixed together inside each - so the
+    // venue has to carry that job typographically or it does not get done.
+    // The tag is the part a visitor scans for ("can I attend this from my
+    // desk, or do I have to walk to Hill?"); the room number only matters
+    // once they have decided to go, so it stays quiet beside it.
     const locationText = event.location || event.row || '';
     if (locationText) {
       const location = document.createElement('span');
       location.className = 'libcal-gantt-home__item-location';
-      location.textContent = locationText;
+
+      // LibCal returns these pre-joined as "Main Library: Lobby", so the
+      // first colon is the venue/room seam. No colon means the whole
+      // string is the venue ("Online Event") and there is no room to show.
+      const seam = locationText.indexOf(':');
+      const venueText = (seam === -1 ? locationText : locationText.slice(0, seam)).trim();
+      const roomText = seam === -1 ? '' : locationText.slice(seam + 1).trim();
+
+      const venue = document.createElement('span');
+      venue.className = 'libcal-gantt-home__venue';
+      venue.setAttribute('data-venue', venueKey(venueText));
+      venue.textContent = venueText;
+      location.appendChild(venue);
+
+      if (roomText) {
+        const room = document.createElement('span');
+        room.className = 'libcal-gantt-home__room';
+        room.textContent = roomText;
+        location.appendChild(room);
+      }
+
       body.appendChild(location);
     }
 
@@ -1015,16 +1087,175 @@
       dot.setAttribute('aria-hidden', 'true');
       pill.appendChild(dot);
 
+      // The building name carries the weight, the state stays quiet beside
+      // it. Reversed - name muted, state bold - the strip reads as a list
+      // of adjectives you have to trace back to a building.
+      const name = document.createElement('span');
+      name.className = 'libcal-gantt-home__status-row';
+      name.textContent = rowLabel;
+      pill.appendChild(name);
+
       const text = document.createElement('span');
-      text.textContent = status === 'open'
-        ? Drupal.t('@row: open now', { '@row': rowLabel })
-        : Drupal.t('@row: closed now', { '@row': rowLabel });
+      text.className = 'libcal-gantt-home__status-detail';
+      text.textContent = describeRowHours(rowLabel, status, state);
       pill.appendChild(text);
 
       bar.appendChild(pill);
     });
 
     return wrote ? bar : null;
+  }
+
+  /**
+   * The words after a building's name in the status strip: "open until
+   * 12 AM", "opens 7 AM tomorrow", "opens 9 AM Monday".
+   *
+   * "Closed" on its own is a dead end - it answers the question the
+   * visitor asked and then abandons them, which is exactly the moment
+   * they need the next opening time. So a closed building is asked when it
+   * opens next, looking through today's remaining hours first (a visitor
+   * at 6 AM is before opening, not after closing) and then forward through
+   * every day whose hours have been loaded.
+   *
+   * Falls back to a bare "closed now" only when the answer genuinely isn't
+   * in the loaded data - a building with no upcoming hours, or a feed that
+   * stops at today. Guessing "opens tomorrow morning" from nothing would
+   * be worse than saying less.
+   *
+   * @param {string} rowLabel
+   *   The location row / building name.
+   * @param {string} status
+   *   'open' or 'closed', from computeRowOpenStatus().
+   * @param {Object} state
+   *   Chart state, for its hours and weekendHours maps.
+   *
+   * @return {string}
+   *   Localised phrase to print after the building name.
+   */
+  function describeRowHours(rowLabel, status, state) {
+    const rowHours = (state.hours && state.hours[rowLabel]) || {};
+    const today = rowHours[todayDateKey()];
+
+    if (status === 'open') {
+      // A row can be open with no closing time recorded - hours entries
+      // carry openHour and closeHour independently - and "open until
+      // undefined" is worse than not saying.
+      return (today && typeof today.closeHour === 'number')
+        ? Drupal.t('open until @time', {
+          '@time': compactClockLabel(formatHourFraction(today.closeHour)),
+        })
+        : Drupal.t('open now');
+    }
+
+    const next = nextOpening(rowLabel, state);
+    if (!next) {
+      return Drupal.t('closed now');
+    }
+
+    const time = compactClockLabel(formatHourFraction(next.openHour));
+    const when = relativeDayWord(next.day);
+    return when
+      ? Drupal.t('opens @time @when', { '@time': time, '@when': when })
+      : Drupal.t('opens @time', { '@time': time });
+  }
+
+  /**
+   * The next moment a building opens, at or after right now.
+   *
+   * Reads weekday and weekend hours as one merged timeline. They are
+   * stored apart (`state.hours` vs `state.weekendHours`) because the grid
+   * variant renders Saturday and Sunday as a single collapsed column
+   * rather than two of its weekday columns - but that is a layout
+   * distinction, and to a visitor standing outside on a Friday night the
+   * next opening is Saturday's. Ignoring the weekend map here would tell
+   * them the library opens Monday.
+   *
+   * @param {string} rowLabel
+   *   The location row / building name.
+   * @param {Object} state
+   *   Chart state, for its hours and weekendHours maps.
+   *
+   * @return {?Object}
+   *   `{ day, openHour }` for the next opening, or null when no loaded day
+   *   has one.
+   */
+  function nextOpening(rowLabel, state) {
+    const byDay = Object.assign(
+      {},
+      (state.hours && state.hours[rowLabel]) || {},
+      (state.weekendHours && state.weekendHours[rowLabel]) || {}
+    );
+
+    const today = todayDateKey();
+    const now = nowHourFraction();
+    // Y-m-d keys sort chronologically as plain strings, which is the whole
+    // reason this module uses them as its day identity.
+    const keys = Object.keys(byDay).filter((key) => key >= today).sort();
+
+    for (let i = 0; i < keys.length; i++) {
+      const entry = byDay[keys[i]];
+      if (!entry || entry.closed || typeof entry.openHour !== 'number') {
+        continue;
+      }
+      // Today's opening only counts if it hasn't happened yet. Past it and
+      // the building is closed for the night, so the answer is a later day.
+      if (keys[i] === today && now >= entry.openHour) {
+        continue;
+      }
+      return { day: keys[i], openHour: entry.openHour };
+    }
+
+    return null;
+  }
+
+  /**
+   * How to refer to a day relative to today: '' for today itself (the
+   * sentence reads "opens 7 AM", with no date needed), "tomorrow", a bare
+   * weekday name inside the coming week, and a dated label beyond it -
+   * past six days out "Tuesday" is ambiguous about which Tuesday.
+   *
+   * @param {string} day
+   *   ISO date string.
+   *
+   * @return {string}
+   *   Localised relative day phrase, or '' when the day is today.
+   */
+  function relativeDayWord(day) {
+    const today = todayDateKey();
+    if (day === today) {
+      return '';
+    }
+
+    const from = new Date(today + 'T00:00:00');
+    const to = new Date(day + 'T00:00:00');
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      return formatDayLabel(day, false);
+    }
+
+    const offset = Math.round((to.getTime() - from.getTime()) / 86400000);
+    if (offset === 1) {
+      return Drupal.t('tomorrow');
+    }
+    if (offset > 1 && offset < 7) {
+      try {
+        return to.toLocaleDateString(undefined, { weekday: 'long' });
+      }
+      catch (e) {
+        return formatDayLabel(day, false);
+      }
+    }
+    return Drupal.t('on @day', { '@day': formatDayLabel(day, false) });
+  }
+
+  /**
+   * Appends one form of the header's date range - see the long/short pair
+   * built in buildHomepageHeader().
+   */
+  function appendRangeForm(range, className, span) {
+    const form = document.createElement('span');
+    form.className = className;
+    form.textContent = Drupal.t('@span · all times Central', { '@span': span });
+    range.appendChild(form);
   }
 
   /**
@@ -3112,6 +3343,180 @@
     return endLabel === '11:59 PM'
       || endLabel === '11:59:59 PM'
       || endLabel === '12:00 AM';
+  }
+
+  /**
+   * Day name for a homepage column head: "Wednesday, Sep 30".
+   *
+   * The weekday is spelled out. "FRI" is a compression the reader has to
+   * expand, and it was buying less than it looked: set uppercase and
+   * tracked out, the long form is about 135px wide, which a third-width
+   * card carries without wrapping even beside the Today badge.
+   *
+   * The month comes along with it, and that is a constraint rather than a
+   * choice. There is no CLDR pattern for "weekday + day of month" on its
+   * own, so asking Intl for `{ weekday, day }` and nothing else does not
+   * return "Wednesday 30" - en-US resolves it to "30 Wednesday", and other
+   * locales are free to be stranger still. Hand-joining the two parts
+   * would mean inventing word order for every locale this module has not
+   * been tested in. Delegating to formatDayLabel()'s long form asks Intl
+   * for a real pattern instead and takes the redundant month as the price
+   * of a string that is correctly ordered everywhere.
+   *
+   * @param {string} day
+   *   ISO date string.
+   *
+   * @return {string}
+   *   Localised full weekday, short month and day of month.
+   */
+  function formatHomepageDayName(day) {
+    return formatDayLabel(day, true);
+  }
+
+  /**
+   * A homepage header endpoint, fully spelled out: "Wednesday, September
+   * 30". The long form of formatDayLabel(), for the one line that has the
+   * width to carry it.
+   *
+   * @param {string} day
+   *   ISO date string.
+   *
+   * @return {string}
+   *   Localised full weekday, full month and day of month.
+   */
+  function formatRangeEndpoint(day) {
+    const date = new Date(day + 'T00:00:00');
+    if (Number.isNaN(date.getTime())) {
+      return day;
+    }
+    try {
+      return date.toLocaleDateString(undefined, {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+      });
+    }
+    catch (e) {
+      return formatDayLabel(day, true);
+    }
+  }
+
+  /**
+   * Matches a 12-hour clock label as LibCal formats it - "4:00 PM",
+   * "9:30 AM", occasionally with seconds ("11:59:59 PM") - and captures
+   * the pieces needed to shorten it. Anything else (a 24-hour locale, a
+   * localised meridiem, a malformed value) simply fails to match, which
+   * is how formatCompactTimeRange() knows to leave the label alone.
+   */
+  const CLOCK_LABEL_PATTERN = /^(\d{1,2}):(\d{2})(?::\d{2})?\s*([AP])\.?M\.?$/i;
+
+  /**
+   * Collapses a pair of clock labels into one compact range:
+   * "4:00 PM"/"5:00 PM" becomes "4–5 PM", "9:00 AM"/"3:30 PM" becomes
+   * "9 AM–3:30 PM".
+   *
+   * Two reductions, both of redundancy rather than information:
+   *
+   * - `:00` is dropped. A trailing double zero is the most common string
+   *   in the column and the least informative; "4 PM" and "4:00 PM" say
+   *   the same thing, and only one of them survives a 64px track without
+   *   wrapping.
+   * - A meridiem repeated on both ends is printed once, on the end that
+   *   is ambiguous without it. "4–5 PM" cannot be misread. When the range
+   *   crosses noon or midnight the meridiem differs, carries real
+   *   information, and both are kept ("9 AM–3:30 PM").
+   *
+   * This is a homepage-only treatment. The grid variant's bars are
+   * measured against a time axis where the exact clock label is the
+   * payload, so they keep the unabbreviated form.
+   *
+   * @param {string} startLabel
+   *   Start time as formatted by the feed.
+   * @param {string} endLabel
+   *   End time as formatted by the feed.
+   *
+   * @return {string}
+   *   The compacted range, or the labels joined verbatim when either one
+   *   is not a clock label this function recognises.
+   */
+  function formatCompactTimeRange(startLabel, endLabel) {
+    const verbatim = startLabel + '–' + endLabel;
+    const start = CLOCK_LABEL_PATTERN.exec(String(startLabel || '').trim());
+    const end = CLOCK_LABEL_PATTERN.exec(String(endLabel || '').trim());
+    if (!start || !end) {
+      return verbatim;
+    }
+
+    const startClock = start[1] + (start[2] === '00' ? '' : ':' + start[2]);
+    const endClock = end[1] + (end[2] === '00' ? '' : ':' + end[2]);
+    const startMeridiem = start[3].toUpperCase() + 'M';
+    const endMeridiem = end[3].toUpperCase() + 'M';
+
+    return (startMeridiem === endMeridiem ? startClock : startClock + ' ' + startMeridiem)
+      + '–' + endClock + ' ' + endMeridiem;
+  }
+
+  /**
+   * Shortens a single clock label the same way formatCompactTimeRange()
+   * shortens a pair: "12:00 AM" becomes "12 AM", "9:30 AM" is left alone
+   * because the half hour is information. Used by the hours strip, so
+   * "open until 12 AM" is punctuated like the event times above it rather
+   * than being the one place that still prints a double zero.
+   *
+   * @param {string} label
+   *   A clock label.
+   *
+   * @return {string}
+   *   The shortened label, or the input unchanged when it is not a clock
+   *   label this module recognises.
+   */
+  function compactClockLabel(label) {
+    const parts = CLOCK_LABEL_PATTERN.exec(String(label || '').trim());
+    if (!parts) {
+      return String(label || '');
+    }
+    return parts[1]
+      + (parts[2] === '00' ? '' : ':' + parts[2])
+      + ' ' + parts[3].toUpperCase() + 'M';
+  }
+
+  /**
+   * Sorts a venue name into one of the buckets the venue tag is coloured
+   * by: 'online', 'hill', 'main', or 'other'.
+   *
+   * Matched on substrings rather than compared against exact configured
+   * labels, because the same place arrives spelled several ways across the
+   * feed and the block settings - "Main Library", "LSU Library", "Hill
+   * Memorial", "Hill Memorial Library" - and a lookup table of exact
+   * strings would silently stop colouring the day someone renames a
+   * calendar.
+   *
+   * Anything unrecognised returns 'other', which is a real style (a
+   * neutral outlined tag), not a failure: a library that adds a fourth
+   * location gets a correct, legible tag immediately and a colour for it
+   * whenever someone gets round to choosing one.
+   *
+   * @param {string} venue
+   *   Venue name as shown in the tag.
+   *
+   * @return {string}
+   *   Bucket key for the `data-venue` attribute.
+   */
+  function venueKey(venue) {
+    const text = String(venue || '').toLowerCase();
+    if (text.indexOf('online') !== -1
+      || text.indexOf('virtual') !== -1
+      || text.indexOf('zoom') !== -1
+      || text.indexOf('webinar') !== -1) {
+      return 'online';
+    }
+    if (text.indexOf('hill') !== -1) {
+      return 'hill';
+    }
+    if (text.indexOf('main') !== -1 || text.indexOf('lsu library') !== -1) {
+      return 'main';
+    }
+    return 'other';
   }
 
   function formatDayLabel(day, long) {
