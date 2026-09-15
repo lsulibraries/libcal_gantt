@@ -87,8 +87,6 @@
       // buildRows(). It's the same on every page, so it's just
       // overwritten (not merged/appended) each time a response comes in.
       rowLabels: [],
-      dayStartHour: 8,
-      dayEndHour: 21,
       pageSize: 0,
       loading: false,
       // The configured "Calendars" tabs (see the settings form) and
@@ -231,12 +229,6 @@
     const newHours = data.hours && typeof data.hours === 'object' ? data.hours : {};
 
     state.pageSize = newDays.length || state.pageSize;
-    if (typeof data.dayStartHour === 'number') {
-      state.dayStartHour = data.dayStartHour;
-    }
-    if (typeof data.dayEndHour === 'number') {
-      state.dayEndHour = data.dayEndHour;
-    }
     if (Array.isArray(data.rows)) {
       state.rowLabels = data.rows;
     }
@@ -308,8 +300,6 @@
 
     const rows = buildRows(state.rowLabels, state.events);
     const scale = {
-      dayStartHour: state.dayStartHour,
-      dayEndHour: state.dayEndHour,
       hours: state.hours,
       weekends: state.weekends,
       weekendHours: state.weekendHours,
@@ -551,6 +541,13 @@
     rows.forEach((row) => {
       const { runs, consumedByEvent } = rowMerges[row.label];
       const spans = clipRunsToChunk(runs, chunk.startIndex, chunkDays, dayColumns);
+      // Extends a run (or promotes a solo event) across a weekend
+      // accessory column immediately to its right when LibCal has the
+      // same recurring thing scheduled that Saturday/Sunday too - see
+      // applyWeekendFlow(). Mutates `spans` (may append synthetic
+      // single-day-plus-weekend entries), so subRowCount below must be
+      // computed after this call.
+      const { absorbedByWeekend, promotedEvents } = applyWeekendFlow(row, plan, spans, consumedByEvent);
       const subRowCount = spans.length + 1;
 
       const rowHeader = document.createElement('div');
@@ -573,7 +570,7 @@
       // continues across a weekend it's merged with) - see
       // buildSpanningBar().
       spans.forEach((span, idx) => {
-        const bar = buildSpanningBar(span.run);
+        const bar = buildSpanningBar(span.run, span.flowsWeekend);
         bar.style.gridRow = String(gridLine + idx);
         bar.style.gridColumn = span.startGridCol + ' / span ' + span.gridColSpan;
         block.appendChild(bar);
@@ -594,7 +591,8 @@
         }
 
         if (track.type === 'weekend') {
-          const cell = buildWeekendCell(row, track.weekend, weekendHoursForRow, calendarShowHours);
+          const absorbedKeys = absorbedByWeekend.get(track.weekend);
+          const cell = buildWeekendCell(row, track.weekend, weekendHoursForRow, calendarShowHours, absorbedKeys);
           cell.style.gridRow = String(dayCellsLine);
           cell.style.gridColumn = String(track.col);
           block.appendChild(cell);
@@ -630,6 +628,10 @@
             const consumedDays = consumedByEvent.get(event);
             return !consumedDays || !consumedDays.has(day);
           })
+          // Excludes a solo event that applyWeekendFlow() just promoted
+          // into its own weekend-flowing spanning bar above, so it isn't
+          // ALSO rendered a second time inside this day's normal cell.
+          .filter((event) => !promotedEvents.has(event))
           .sort((a, b) => a.segments[day].startHour - b.segments[day].startHour);
 
         dayEvents.forEach((event) => {
@@ -695,7 +697,15 @@
    */
   function blockColumnTemplate(plan) {
     const tracks = plan.map((track) => (
-      track.type === 'weekend' ? 'var(--libcal-gantt-weekend-width, 88px)' : 'minmax(90px, 1fr)'
+      track.type === 'weekend'
+        ? 'var(--libcal-gantt-weekend-width, 88px)'
+        // The day-column floor is a custom property rather than a literal
+        // so gantt-timeline.css's container queries can step it down as
+        // the module's own width shrinks - that's what keeps every column
+        // fitting instead of overflowing into a horizontal scroll. The
+        // `1fr` max is what lets the columns share whatever room is left
+        // once the label (and any weekend) column is accounted for.
+        : 'minmax(var(--libcal-gantt-day-min-width, 90px), 1fr)'
     ));
     return 'var(--libcal-gantt-row-label-width) ' + tracks.join(' ');
   }
@@ -734,12 +744,25 @@
    * hours instead (skipped when `calendarShowHours` is false, same as
    * the regular day-cell captions, since there's nothing meaningful to
    * show there for a calendar not tied to building hours).
+   *
+   * `absorbedKeys` (from applyWeekendFlow()) is the set of this row's
+   * weekend events that turned out to be the same recurring thing as a
+   * bar ending on the Friday just before this weekend - those already
+   * flow across this column as part of that bar (see applyWeekendFlow()),
+   * so they're filtered out here rather than ALSO listed as a separate
+   * note, which would just repeat the same event twice in two visually
+   * disconnected styles. A row left with nothing else to show this way
+   * still correctly falls back to `empty_weekend` (hours), exactly like a
+   * weekend with no events at all - the flowing bar above already covers
+   * the "something's happening" signal, same as a weekday's hours caption
+   * still shows underneath a spanning multi-day bar.
    */
-  function buildWeekendCell(row, weekend, weekendHoursForRow, calendarShowHours) {
+  function buildWeekendCell(row, weekend, weekendHoursForRow, calendarShowHours, absorbedKeys) {
     const cell = document.createElement('div');
     cell.className = 'libcal-gantt__weekend-cell';
 
-    const events = (weekend.events && weekend.events[row.label]) || [];
+    const events = ((weekend.events && weekend.events[row.label]) || [])
+      .filter((event) => !absorbedKeys || !absorbedKeys.has(weekendFlowKey(event)));
 
     if (events.length) {
       cell.classList.add('event_weekend');
@@ -781,13 +804,19 @@
       note.target = '_blank';
       note.rel = 'noopener noreferrer';
     }
-    note.title = event.title + ' — ' + event.startLabel + '–' + event.endLabel + (event.location ? ' — ' + event.location : '');
+    const allDay = isAllDayLabel(event.startLabel, event.endLabel);
+    note.title = event.title + ' — ' + (allDay ? Drupal.t('All day') : event.startLabel + '–' + event.endLabel) + (event.location ? ' — ' + event.location : '');
 
     const dayAbbrev = formatDayLabel(event.day, false).split(',')[0];
 
     const time = document.createElement('span');
     time.className = 'libcal-gantt__weekend-event-time';
-    time.textContent = dayAbbrev + ' ' + event.startLabel + '–' + event.endLabel;
+    // The day abbreviation alone already says which day this note is for
+    // - an all-day event's time range would just repeat "12:00 AM-11:59
+    // PM" next to it for no added information, so it's dropped here
+    // rather than replaced with "All day" the way a bar's own time slot
+    // is (see isAllDayLabel()'s doc).
+    time.textContent = allDay ? dayAbbrev : dayAbbrev + ' ' + event.startLabel + '–' + event.endLabel;
     note.appendChild(time);
 
     const title = document.createElement('span');
@@ -807,6 +836,124 @@
    */
   function mergeKey(event) {
     return [event.row, event.title, event.location || '', event.startLabel, event.endLabel].join('\u0000');
+  }
+
+  /**
+   * The same "same recurring thing" identity mergeKey() uses (title +
+   * location + start/end time), but for comparing a weekday bar against a
+   * weekend event note (GanttEventsController's `weekends[].events`,
+   * already scoped to one row, so there's no row field to include here).
+   * Used by applyWeekendFlow() below.
+   */
+  function weekendFlowKey(item) {
+    return JSON.stringify([item.title, item.location || '', item.startLabel, item.endLabel]);
+  }
+
+  /**
+   * A recurring display commonly doesn't stop for the weekend even though
+   * this module never renders Saturday/Sunday as their own day columns -
+   * that's exactly what the weekend accessory column's real-event case
+   * already surfaces (see buildWeekendCell()). Previously that column
+   * rendered those weekend occurrences as their own small, separately-
+   * styled notes even when they were plainly the same title/location/time
+   * as the bar ending on the Friday right next to them - reading as two
+   * disconnected things rather than one continuous run. This detects that
+   * case and extends the Friday bar across the weekend column instead:
+   *
+   * - If a multi-day merged run (from clipRunsToChunk()'s `spans`) ends on
+   *   the real day immediately before a weekend column, and this row's
+   *   weekend events include a match for that run's title/location/time,
+   *   the run's `gridColSpan` is grown by one to flow across that column
+   *   too (mutates `spans` in place).
+   * - If no run ends there but an otherwise-solo (unmerged) event on that
+   *   day matches instead, it's promoted into its own synthetic one-day-
+   *   plus-weekend spanning entry (pushed onto `spans`) so a display that
+   *   only ever repeats into a single weekend - not a multi-weekday run -
+   *   still flows the same way a real run would.
+   *
+   * Either way, the matched weekend event's key is recorded in the
+   * returned `absorbedByWeekend` map (keyed by the weekend marker object
+   * itself, since the same block can contain more than one weekend gap)
+   * so buildWeekendCell() can skip re-listing it as a separate note - see
+   * that function's doc. `promotedEvents` is the set of original event
+   * objects that got the second treatment above, so the day cell's normal
+   * event list can exclude them (they're now rendered as a spanning bar
+   * instead - see buildGridBlock()).
+   *
+   * Desktop grid only - the mobile agenda's weekend divider still lists
+   * every occurrence as its own line, since a scrolling list has no
+   * equivalent notion of two cells "flowing" into each other the way two
+   * adjacent grid columns do.
+   */
+  function applyWeekendFlow(row, plan, spans, consumedByEvent) {
+    const absorbedByWeekend = new Map();
+    const promotedEvents = new Set();
+
+    plan.forEach((track, idx) => {
+      if (track.type !== 'weekend') {
+        return;
+      }
+
+      const weekend = track.weekend;
+      const weekendEvents = (weekend.events && weekend.events[row.label]) || [];
+      if (!weekendEvents.length) {
+        return;
+      }
+
+      const precedingTrack = plan[idx - 1];
+      if (!precedingTrack || precedingTrack.type !== 'day') {
+        return;
+      }
+
+      const weekendKeys = weekendEvents.map(weekendFlowKey);
+      const absorbedKeys = new Set();
+
+      spans
+        .filter((span) => span.startGridCol + span.gridColSpan - 1 === precedingTrack.col)
+        .forEach((span) => {
+          const runKey = weekendFlowKey(span.run);
+          if (weekendKeys.indexOf(runKey) !== -1) {
+            span.gridColSpan += 1;
+            span.flowsWeekend = true;
+            absorbedKeys.add(runKey);
+          }
+        });
+
+      row.events
+        .filter((event) => event.segments && event.segments[precedingTrack.day])
+        .filter((event) => {
+          const consumedDays = consumedByEvent.get(event);
+          return !consumedDays || !consumedDays.has(precedingTrack.day);
+        })
+        .forEach((event) => {
+          const eventKey = weekendFlowKey(event);
+          if (weekendKeys.indexOf(eventKey) === -1 || absorbedKeys.has(eventKey)) {
+            return;
+          }
+          promotedEvents.add(event);
+          spans.push({
+            run: {
+              title: event.title,
+              location: event.location,
+              image: event.image,
+              startLabel: event.startLabel,
+              endLabel: event.endLabel,
+              url: event.url,
+              days: [precedingTrack.day],
+            },
+            startGridCol: precedingTrack.col,
+            gridColSpan: 2,
+            flowsWeekend: true,
+          });
+          absorbedKeys.add(eventKey);
+        });
+
+      if (absorbedKeys.size) {
+        absorbedByWeekend.set(weekend, absorbedKeys);
+      }
+    });
+
+    return { absorbedByWeekend, promotedEvents };
   }
 
   /**
@@ -962,17 +1109,26 @@
    * tooltip includes the date range since that's no longer implied by
    * which single cell the bar sits in.
    */
-  function buildSpanningBar(run) {
+  function buildSpanningBar(run, flowsWeekend) {
     const bar = document.createElement(run.url ? 'a' : 'div');
     bar.className = 'libcal-gantt__bar libcal-gantt__bar--spanning';
+    if (flowsWeekend) {
+      // Purely a theming hook - applyWeekendFlow() already extended this
+      // bar's grid-column span across the weekend accessory column, which
+      // is what actually makes it flow visually; no default CSS keys off
+      // this class.
+      bar.classList.add('libcal-gantt__bar--flows-weekend');
+    }
 
+    const allDay = isAllDayLabel(run.startLabel, run.endLabel);
     const dateRange = run.days.length > 1
       ? formatDayLabel(run.days[0], false) + ' – ' + formatDayLabel(run.days[run.days.length - 1], false)
       : formatDayLabel(run.days[0], false);
-    bar.title = run.startLabel + '–' + run.endLabel
+    bar.title = (allDay ? Drupal.t('All day') : run.startLabel + '–' + run.endLabel)
       + ' — ' + dateRange
       + (run.location ? ' — ' + run.location : '')
-      + ' — ' + run.title;
+      + ' — ' + run.title
+      + (flowsWeekend ? ' — ' + Drupal.t('continues through the weekend') : '');
 
     if (run.url) {
       bar.href = run.url;
@@ -984,7 +1140,7 @@
 
     const time = document.createElement('span');
     time.className = 'libcal-gantt__bar-time';
-    time.textContent = run.startLabel + '–' + run.endLabel;
+    time.textContent = allDay ? Drupal.t('All day') : run.startLabel + '–' + run.endLabel;
     bar.appendChild(time);
 
     if (run.location) {
@@ -1045,13 +1201,12 @@
    * the same thing precisely, in the same place a person's eye already
    * goes to find events for that row/day.
    *
-   * Always shows the day's actual opening time whenever one is known,
-   * regardless of how it compares to the configured display window
-   * ("Day starts at" on the settings form) - it used to be suppressed
-   * whenever the location was already open at the window's start, on
-   * the theory that there was "nothing to flag," but the user asked to
-   * see the real hours unconditionally instead of having them hidden
-   * based on that comparison.
+   * Always shows the day's actual opening time whenever one is known.
+   * It used to be suppressed whenever the location was already open at
+   * the start of a configured display window, on the theory that there
+   * was "nothing to flag," but the user asked to see the real hours
+   * unconditionally instead. (That window setting has since been removed
+   * from the module altogether - see libcal_gantt_update_10001().)
    *
    * Wording switches between future and past tense ("Opens 9:00 AM"
    * before it happens, "Opened 9:00 AM" once it has) based on `day` and
@@ -1102,12 +1257,10 @@
    * last in the stacked flex column rather than above the events. Does
    * nothing on a fully closed day (appendOpeningCaption() already said
    * so) or when no closing time is known. Otherwise always shows the
-   * day's actual closing time, regardless of the configured display
-   * window ("Day ends at" on the settings form) - see
-   * appendOpeningCaption() for why the earlier window-relative
-   * suppression was removed, and for the future/past tense switch this
-   * shares with it ("Closes 5:00 PM" before it happens, "Closed 5:00
-   * PM" once it has).
+   * day's actual closing time - see appendOpeningCaption() for why the
+   * earlier window-relative suppression was removed, and for the
+   * future/past tense switch this shares with it ("Closes 5:00 PM"
+   * before it happens, "Closed 5:00 PM" once it has).
    */
   function appendClosingCaption(dayCell, hoursEntry, day) {
     if (!hoursEntry || hoursEntry.closed || typeof hoursEntry.closeHour !== 'number') {
@@ -1455,7 +1608,12 @@
 
     const time = document.createElement('span');
     time.className = 'libcal-gantt-agenda__time';
-    time.textContent = dayAbbrev + ' ' + event.startLabel + '–' + event.endLabel;
+    // Same reasoning as buildWeekendEventNote() - the day abbreviation
+    // already says which day, so an all-day event's meaningless
+    // "12:00 AM-11:59 PM" range is dropped rather than shown.
+    time.textContent = isAllDayLabel(event.startLabel, event.endLabel)
+      ? dayAbbrev
+      : dayAbbrev + ' ' + event.startLabel + '–' + event.endLabel;
     link.appendChild(time);
 
     const details = document.createElement('span');
@@ -1552,7 +1710,7 @@
 
     const time = document.createElement('span');
     time.className = 'libcal-gantt-agenda__time';
-    time.textContent = event.startLabel + '–' + event.endLabel;
+    time.textContent = isAllDayLabel(event.startLabel, event.endLabel) ? Drupal.t('All day') : event.startLabel + '–' + event.endLabel;
     link.appendChild(time);
 
     const details = document.createElement('span');
@@ -1672,9 +1830,10 @@
    * its horizontal position to convey it.
    */
   function buildBar(event) {
+    const allDay = isAllDayLabel(event.startLabel, event.endLabel);
     const bar = document.createElement(event.url ? 'a' : 'div');
     bar.className = 'libcal-gantt__bar';
-    bar.title = event.startLabel + '–' + event.endLabel
+    bar.title = (allDay ? Drupal.t('All day') : event.startLabel + '–' + event.endLabel)
       + (event.location ? ' — ' + event.location : '')
       + ' — ' + event.title;
 
@@ -1688,7 +1847,7 @@
 
     const time = document.createElement('span');
     time.className = 'libcal-gantt__bar-time';
-    time.textContent = event.startLabel + '–' + event.endLabel;
+    time.textContent = allDay ? Drupal.t('All day') : event.startLabel + '–' + event.endLabel;
     bar.appendChild(time);
 
     // Location before title - now that rows group by campus rather than
@@ -1881,6 +2040,21 @@
       return now >= entry.openHour ? 'open' : 'closed';
     }
     return null;
+  }
+
+  /**
+   * A LibCal "Displays"-style event is commonly entered as running the
+   * entire day (00:00-23:59-ish) rather than at a specific time, since the
+   * display case itself is just always there - LSU's real feed represents
+   * this as `startLabel: '12:00 AM'`, `endLabel: '11:59 PM'` (see
+   * GanttEventsController::prepareEvent()). Showing that literal time
+   * range on every bar/note is redundant noise for something that isn't
+   * actually time-scoped - this flags exactly that case so the various
+   * event-detail builders below can show "All day" (or nothing extra,
+   * where a day abbreviation already carries the point) instead.
+   */
+  function isAllDayLabel(startLabel, endLabel) {
+    return startLabel === '12:00 AM' && endLabel === '11:59 PM';
   }
 
   function formatDayLabel(day, long) {

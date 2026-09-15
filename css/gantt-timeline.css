@@ -12,32 +12,153 @@
  *   }
  */
 
+html .largeBanner .bnContainer:has(#block-origami-libcaleventsganttchart) {
+  grid-template-rows: 200px 1fr 4fr;
+}
+
+div#block-origami-libcaleventsganttchart {
+    grid-column: span 3;
+    color: initial;
+        margin-bottom: 80px;
+}
+
+/**
+ * LibCal Gantt Timeline - base styling.
+ *
+ * Everything visual is exposed as a CSS custom property so a theme can
+ * override the look without touching this file - e.g. in your theme's
+ * stylesheet:
+ *
+ *   .libcal-gantt-chart {
+ *     --libcal-gantt-bar-bg: #003057;
+ *     --libcal-gantt-bar-color: #fff;
+ *     --libcal-gantt-header-bg: #f4f4f4;
+ *   }
+ */
+
 .libcal-gantt-chart {
-  --libcal-gantt-border: #dcdcdc;
-  --libcal-gantt-header-bg: #f4f4f4;
-  --libcal-gantt-header-color: #1a1a1a;
+  /* ---- Palette -------------------------------------------------
+     A dark theme by default. Every colour the module paints is a
+     variable, so re-theming it (including back to a light palette)
+     means overriding these and nothing else - no rule below hardcodes
+     a colour.
+
+     Contrast was checked against WCAG AA rather than eyeballed: body,
+     muted and header text all clear 4.5:1 against the surface they sit
+     on, white-on-bar clears 5.1:1, and the bar/border/status colours
+     clear 3:1 against the cell surface as non-text UI.
+
+     `--libcal-gantt-bg` paints the module's own backdrop. Set it to
+     `transparent` if you would rather the host page show through
+     between blocks. */
+  --libcal-gantt-bg: #transparent;
+  --libcal-gantt-surface: #1c1826;
+  --libcal-gantt-border: #3d3550;
+  --libcal-gantt-border-subtle: #2b2437;
+  --libcal-gantt-shadow: rgba(0, 0, 0, 0.5);
+
+  --libcal-gantt-text: #e9e5f0;
+  --libcal-gantt-text-muted: #b3a9c4;
+  --libcal-gantt-text-subtle: #c7bfd4;
+
+  --libcal-gantt-header-bg: #261f33;
+  --libcal-gantt-header-color: #f2eef8;
+
+  /* Status colours - the now_open/now_closed dots and the error note. */
+  --libcal-gantt-open-color: #4ac97e;
+  --libcal-gantt-closed-color: #f07a7a;
+  --libcal-gantt-error-color: #ff9090;
+
+  /* The diagonal hatch used for an empty weekend cell and a closed-all-day
+     band. Two tones, light-on-dark here; swap for rgba(0,0,0,...) on a
+     light palette. */
+  --libcal-gantt-hatch-a: rgba(255, 255, 255, 0.03);
+  --libcal-gantt-hatch-b: rgba(255, 255, 255, 0.065);
+
+  --libcal-gantt-button-bg: #261f33;
+  --libcal-gantt-button-active-color: #ffffff;
+  /* Viewport-relative fallback first, then the container-relative
+     preferred value. A browser without container-query units drops the
+     second declaration and keeps the first; one with them uses `cqi`
+     (1% of this element's own inline size), so the label column responds
+     to the space the module was actually GIVEN rather than to the size of
+     the window - the whole point when this block is dropped into a
+     sidebar or a narrow content region. */
   --libcal-gantt-row-label-width: clamp(120px, 18vw, 220px);
+  --libcal-gantt-row-label-width: clamp(110px, 18cqi, 220px);
+  /* Floor for each day column, stepped down by the container queries at
+     the bottom of this file so every column keeps fitting as the
+     available width shrinks. Read by blockColumnTemplate() in
+     gantt-timeline.js, which builds each block's grid-template-columns. */
+  --libcal-gantt-day-min-width: 96px;
   --libcal-gantt-row-height: 3rem;
-  --libcal-gantt-bar-bg: #2469b3;
-  --libcal-gantt-bar-color: #fff;
+  /* Lightened from LSU's #461D7C so a bar still separates from the dark
+     cell behind it (3.4:1) while keeping white label text at 5.1:1. */
+  --libcal-gantt-bar-bg: #8255cc;
+  --libcal-gantt-bar-color: #ffffff;
   --libcal-gantt-bar-radius: 4px;
+  /* How much bar colour is left veiling a featured image at the bar's
+     right edge. Raise it to mute the image further, lower it to let more
+     through; 0% reproduces the old fade to fully transparent.
+     
+     There is a real trade-off here and no value wins outright. Against
+     the worst case - a pure white pixel in the image, directly under the
+     label - white bar text only reaches WCAG AA (4.5:1) at about a 95%
+     veil, which mutes the image almost to nothing. 80% lands at ~3.5:1
+     on that worst case while keeping the image clearly visible, and the
+     text shadow below covers the rest; most real featured images are
+     photographic mid-tones and fare considerably better than white. Push
+     this toward 95% if your images run very light, or down toward 50% if
+     they are dark and you want them more prominent. */
+  --libcal-gantt-bar-image-veil: 80%;
+  /* Applied to bar text only when a bar HAS an image - see
+     .libcal-gantt__bar--has-image below. Keeps the label legible over a
+     light patch without darkening every plain bar in the chart. */
+  --libcal-gantt-bar-text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
   --libcal-gantt-font-size: 0.875rem;
   --libcal-gantt-weekend-width: 88px;
 
   font-size: var(--libcal-gantt-font-size);
+  /* Set explicitly rather than inherited: the module paints its own dark
+     surfaces, so it can't rely on whatever text colour the host theme
+     happens to pass down - a light theme's near-black body colour on
+     these backgrounds would be unreadable. */
+  color: var(--libcal-gantt-text);
+  background-color: var(--libcal-gantt-bg);
+  /* Establishes this element as a named query container, so the rules at
+     the bottom of this file respond to the module's OWN width instead of
+     the viewport's. Named so a `container-type` the host theme happens to
+     set on some ancestor can't capture our queries. */
+  container-type: inline-size;
+  container-name: libcal-gantt;
+  /* Never push the host layout wider than the slot we were given; the
+     horizontal scroll below is the escape hatch for genuinely impossible
+     widths, not the normal case. */
+  max-width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+/* The module's own box model, regardless of what the host theme sets
+   globally. A theme still on `content-box` would otherwise have every
+   cell's padding and borders ADD to its track width, overflowing a grid
+   that had been measured correctly. */
+.libcal-gantt-chart,
+.libcal-gantt-chart *,
+.libcal-gantt-chart *::before,
+.libcal-gantt-chart *::after {
+  box-sizing: border-box;
 }
 
 .libcal-gantt-chart__loading,
 .libcal-gantt-chart__empty,
 .libcal-gantt-chart__error {
   padding: 1rem 0;
-  color: #555;
+  color: var(--libcal-gantt-text-subtle);
 }
 
 .libcal-gantt-chart__error {
-  color: #a52121;
+  color: var(--libcal-gantt-error-color);
 }
 
 /*
@@ -95,18 +216,38 @@
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  width: max-content;
-  min-width: 100%;
+  /* Fill the space we were given rather than sizing to content. This was
+     `width: max-content` once, which meant every `1fr` day track resolved
+     against the widest event title in that column instead of against the
+     available width - so the grid rendered at the same (very wide) size
+     no matter how narrow its container was, and simply scrolled. */
+  width: 100%;
+  min-width: 0;
 }
 
 .libcal-gantt-block {
   display: grid;
   /* grid-template-columns is set inline per block by
      blockColumnTemplate() in gantt-timeline.js, not here. */
-  width: max-content;
-  min-width: 100%;
+  width: 100%;
+  min-width: 0;
   border: 1px solid var(--libcal-gantt-border);
   border-radius: 6px;
+}
+
+/* Grid and flex items default to `min-width: auto`, which refuses to
+   shrink below the item's min-content size - one long unbroken event
+   title or URL would then force its whole column wider than its track and
+   blow the grid back out past its container. These opt every sizable
+   child back into shrinking, with the existing overflow-wrap rules
+   handling the actual text. */
+.libcal-gantt__day-cell,
+.libcal-gantt__weekend-cell,
+.libcal-gantt__row-header,
+.libcal-gantt__day-header,
+.libcal-gantt__bar,
+.libcal-gantt__weekend-event {
+  min-width: 0;
 }
 
 .libcal-gantt__corner,
@@ -155,7 +296,7 @@
   align-items: center;
   font-weight: 500;
   min-height: var(--libcal-gantt-row-height);
-  background: #fff;
+  background: var(--libcal-gantt-surface);
   /* Keeps the location label in view while the day columns scroll
      horizontally - important once there are more day columns than fit
      the viewport, e.g. a tablet showing the full 10-weekday grid. */
@@ -169,7 +310,7 @@
   border-top: 1px solid var(--libcal-gantt-border);
   border-left: 1px solid var(--libcal-gantt-border);
   min-height: var(--libcal-gantt-row-height);
-  background: #fff;
+  background: var(--libcal-gantt-surface);
   /* Events stack vertically in start-time order (earliest on top) rather
      than being positioned by time of day - each bar is a normal flow
      child here, full width via the flex column's default stretch, and
@@ -203,19 +344,19 @@
 .libcal-gantt__weekend-cell.empty_weekend {
   background: repeating-linear-gradient(
     135deg,
-    rgba(0, 0, 0, 0.02),
-    rgba(0, 0, 0, 0.02) 6px,
-    rgba(0, 0, 0, 0.045) 6px,
-    rgba(0, 0, 0, 0.045) 12px
+    var(--libcal-gantt-hatch-a),
+    var(--libcal-gantt-hatch-a) 6px,
+    var(--libcal-gantt-hatch-b) 6px,
+    var(--libcal-gantt-hatch-b) 12px
   );
 }
 
 .libcal-gantt__weekend-cell.event_weekend {
-  background: #fff;
+  background: var(--libcal-gantt-surface);
 }
 
 .libcal-gantt__weekend-hours {
-  color: #666;
+  color: var(--libcal-gantt-text-muted);
   line-height: 1.3;
 }
 
@@ -245,13 +386,16 @@ a.libcal-gantt__weekend-event:focus {
 
 .libcal-gantt__weekend-event-title {
   overflow-wrap: break-word;
+  /* Same reasoning as .libcal-gantt__bar-label - the weekend column is
+     the narrowest track in the grid. */
+  hyphens: auto;
   line-height: 1.25;
 }
 
 .libcal-gantt__empty-row {
   padding: 1.25rem 0.75rem;
   text-align: center;
-  color: #666;
+  color: var(--libcal-gantt-text-muted);
   border-top: 1px solid var(--libcal-gantt-border);
 }
 
@@ -264,9 +408,8 @@ a.libcal-gantt__weekend-event:focus {
   border-radius: var(--libcal-gantt-bar-radius);
   padding: 0.35rem 0.5rem;
   text-decoration: none;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 1px 2px var(--libcal-gantt-shadow);
   transition: filter 0.15s ease;
-  max-width: 200px;
 }
 
 .libcal-gantt__bar:hover,
@@ -293,12 +436,36 @@ a.libcal-gantt__weekend-event:focus {
  * has the width for a banner image to read as anything but noise.
  */
 .libcal-gantt__bar--has-image {
+  /* Fallback for browsers without color-mix(): the original fade all the
+     way to transparent. */
   background-image:
     linear-gradient(to right, var(--libcal-gantt-bar-bg) 40%, transparent 92%),
+    var(--libcal-gantt-bar-image);
+  /* Preferred: the gradient never reaches full transparency, so a veil of
+     bar colour stays over the image the whole way across and the
+     time/location/title text on top of it remains readable regardless of
+     how light or busy the image is. Tune with
+     --libcal-gantt-bar-image-veil. The image is a background LAYER, not
+     an overlay element, so it can never paint above the text. */
+  background-image:
+    linear-gradient(
+      to right,
+      var(--libcal-gantt-bar-bg) 45%,
+      color-mix(in srgb, var(--libcal-gantt-bar-bg) var(--libcal-gantt-bar-image-veil, 80%), transparent) 100%
+    ),
     var(--libcal-gantt-bar-image);
   background-repeat: no-repeat, no-repeat;
   background-position: left center, right center;
   background-size: 100% 100%, auto 100%;
+}
+
+/* Legibility insurance for the one case the veil alone can't fully solve:
+   a short bar, a long title, and a very light image underneath it. Scoped
+   to image bars so plain bars keep crisp, shadow-free text. */
+.libcal-gantt__bar--has-image .libcal-gantt__bar-time,
+.libcal-gantt__bar--has-image .libcal-gantt__bar-location,
+.libcal-gantt__bar--has-image .libcal-gantt__bar-label {
+  text-shadow: var(--libcal-gantt-bar-text-shadow);
 }
 
 .libcal-gantt__bar-time {
@@ -309,6 +476,13 @@ a.libcal-gantt__weekend-event:focus {
 
 .libcal-gantt__bar-label {
   overflow-wrap: break-word;
+  /* Day columns get genuinely narrow at small container widths (see the
+     container queries at the end of this file), where break-word alone
+     snaps words mid-syllable - "Retrospectiv / e". Hyphenation gives the
+     browser a chance to break at a sensible point and mark it, falling
+     back to the hard break only when it can't. Relies on the document's
+     `lang`, which Drupal always sets on <html>. */
+  hyphens: auto;
   font-size: 0.8125rem;
   line-height: 1.25;
 }
@@ -349,7 +523,7 @@ a.libcal-gantt__weekend-event:focus {
   font-size: 0.6875rem;
   font-style: italic;
   line-height: 1.3;
-  color: #666;
+  color: var(--libcal-gantt-text-muted);
 }
 
 .libcal-gantt__hours-caption--closed {
@@ -364,10 +538,10 @@ a.libcal-gantt__weekend-event:focus {
   border-radius: 4px;
   background: repeating-linear-gradient(
     135deg,
-    rgba(0, 0, 0, 0.035),
-    rgba(0, 0, 0, 0.035) 6px,
-    rgba(0, 0, 0, 0.07) 6px,
-    rgba(0, 0, 0, 0.07) 12px
+    var(--libcal-gantt-hatch-a),
+    var(--libcal-gantt-hatch-a) 6px,
+    var(--libcal-gantt-hatch-b) 6px,
+    var(--libcal-gantt-hatch-b) 12px
   );
 }
 
@@ -401,11 +575,11 @@ a.libcal-gantt__weekend-event:focus {
 }
 
 .now_open::after {
-  background: #2e8b47;
+  background: var(--libcal-gantt-open-color);
 }
 
 .now_closed::after {
-  background: #a52121;
+  background: var(--libcal-gantt-closed-color);
 }
 
 /**
@@ -479,13 +653,13 @@ a.libcal-gantt__weekend-event:focus {
 
 .libcal-gantt-agenda__hours {
   font-size: 0.8125rem;
-  color: #666;
+  color: var(--libcal-gantt-text-muted);
   margin: -0.15rem 0 0.5rem;
 }
 
 .libcal-gantt-agenda__empty {
   margin: 0;
-  color: #666;
+  color: var(--libcal-gantt-text-muted);
   font-size: 0.8125rem;
 }
 
@@ -496,7 +670,7 @@ a.libcal-gantt__weekend-event:focus {
 }
 
 .libcal-gantt-agenda__event {
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--libcal-gantt-border-subtle);
 }
 
 .libcal-gantt-agenda__event:last-child {
@@ -526,7 +700,7 @@ a.libcal-gantt-agenda__link:focus {
   padding-top: 0.1rem;
   font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
-  color: #555;
+  color: var(--libcal-gantt-text-subtle);
 }
 
 .libcal-gantt-agenda__details {
@@ -543,7 +717,7 @@ a.libcal-gantt-agenda__link:focus {
 
 .libcal-gantt-agenda__location {
   font-size: 0.8125rem;
-  color: #666;
+  color: var(--libcal-gantt-text-muted);
   overflow-wrap: break-word;
 }
 
@@ -578,7 +752,7 @@ a.libcal-gantt-agenda__link:focus {
 
 .libcal-gantt-agenda__weekend-hours-line {
   font-size: 0.8125rem;
-  color: #666;
+  color: var(--libcal-gantt-text-muted);
   line-height: 1.4;
 }
 
@@ -633,6 +807,92 @@ a.libcal-gantt-agenda__link:focus {
 }
 
 /**
+ * Container queries - the module responding to ITS OWN width.
+ *
+ * The @media rule above switches views on the VIEWPORT, which is right
+ * for a phone but wrong for a narrow slot on a wide screen: dropped into
+ * a 500px sidebar on a 1600px monitor, a viewport query still calls that
+ * "desktop" and renders a grid with nowhere to go. These rules query
+ * `libcal-gantt` (the chart root, see `container-name` at the top of this
+ * file) instead, so placement drives the layout.
+ *
+ * The steps below walk `--libcal-gantt-day-min-width` (and the weekend
+ * column, the label column, and the type scale) down together, so the
+ * whole set of columns keeps fitting as the slot narrows, instead of the
+ * grid overflowing and falling back to a horizontal scrollbar. Each step
+ * is sized to fit GRID_DAYS_PER_ROW (5) day columns plus the label column
+ * plus a weekend column within that width - raising that constant to 7,
+ * which is a deferred item, means re-checking these numbers.
+ *
+ * The viewport @media rule is deliberately kept as well: a browser
+ * without container-query support ignores everything here but still gets
+ * the phone breakpoint, plus a grid that now genuinely fills its
+ * container rather than sizing to content.
+ */
+@container libcal-gantt (max-width: 1000px) {
+  .libcal-gantt {
+    --libcal-gantt-day-min-width: 84px;
+  }
+}
+
+@container libcal-gantt (max-width: 820px) {
+  .libcal-gantt {
+    --libcal-gantt-day-min-width: 76px;
+    --libcal-gantt-weekend-width: 76px;
+  }
+}
+
+@container libcal-gantt (max-width: 680px) {
+  .libcal-gantt {
+    --libcal-gantt-day-min-width: 64px;
+    --libcal-gantt-weekend-width: 64px;
+    --libcal-gantt-row-label-width: clamp(96px, 16cqi, 140px);
+    font-size: 0.8125rem;
+  }
+
+  .libcal-gantt__day-header,
+  .libcal-gantt__weekend-header,
+  .libcal-gantt__row-header,
+  .libcal-gantt__day-cell {
+    padding-left: 0.4rem;
+    padding-right: 0.4rem;
+  }
+
+  .libcal-gantt__bar {
+    padding-left: 0.35rem;
+    padding-right: 0.35rem;
+  }
+}
+
+/*
+ * Below this the grid stops being readable at any column width, so the
+ * agenda takes over - the same swap the viewport @media rule makes, but
+ * triggered by the space the module actually has.
+ */
+@container libcal-gantt (max-width: 600px) {
+  .libcal-gantt-chart {
+    overflow-x: visible;
+    -webkit-overflow-scrolling: auto;
+  }
+
+  .libcal-gantt {
+    display: none;
+  }
+
+  .libcal-gantt-agenda {
+    display: block;
+  }
+
+  .libcal-gantt-chart__more--desktop {
+    display: none;
+  }
+
+  .libcal-gantt-chart__more--mobile {
+    display: block;
+  }
+}
+
+/**
  * "Show more weekdays" control, appended below both views.
  */
 .libcal-gantt-chart__more {
@@ -647,8 +907,8 @@ a.libcal-gantt-agenda__link:focus {
   padding: 0.55rem 1.25rem;
   border: 1px solid var(--libcal-gantt-bar-bg);
   border-radius: 999px;
-  background: #fff;
-  color: var(--libcal-gantt-bar-bg);
+  background: var(--libcal-gantt-button-bg);
+  color: var(--libcal-gantt-bar-color);
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
@@ -656,7 +916,7 @@ a.libcal-gantt-agenda__link:focus {
 .libcal-gantt-chart__more-button:hover:not(:disabled),
 .libcal-gantt-chart__more-button:focus:not(:disabled) {
   background: var(--libcal-gantt-bar-bg);
-  color: #fff;
+  color: var(--libcal-gantt-button-active-color);
 }
 
 .libcal-gantt-chart__more-button:disabled {
@@ -666,6 +926,24 @@ a.libcal-gantt-agenda__link:focus {
 
 .libcal-gantt-chart__more-error {
   margin: 0.5rem 0 0;
-  color: #a52121;
+  color: var(--libcal-gantt-error-color);
   font-size: 0.8125rem;
+}
+
+
+/**
+ * Site-specific placement.
+ *
+ * This is the block instance on LSU's own site (Drupal generates the id
+ * from the theme name plus the block's machine name), and the rule makes
+ * it span three tracks of the region's grid rather than one. It lives
+ * here at the user's request so the module travels with its placement;
+ * it is inert on any other site, where that id won't exist.
+ *
+ * If this module is ever reused elsewhere, this is the one rule in the
+ * file that isn't generic - a theme's own stylesheet is the more usual
+ * home for placement like this.
+ */
+div#block-origami-libcaleventsganttchart {
+  grid-column: span 3;
 }

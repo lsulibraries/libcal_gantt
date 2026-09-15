@@ -69,8 +69,8 @@ class SettingsForm extends ConfigFormBase {
       '#type' => 'textarea',
       '#rows' => 3,
       '#title' => $this->t('Calendars'),
-      '#default_value' => $config->get('calendars') ?: "8030|Events\n16219|Library Displays",
-      '#description' => $this->t('One calendar per line, as "calendar ID[,ID...]|Tab label" - e.g. "8030|Events" or "8030,8031|Combined View" to merge several LibCal calendars into one tab. Each line becomes its own switchable tab above the chart, in the order listed here - the first line is shown by default. Calendar IDs come from LibCal Admin > Calendars. If you only ever want one combined view with no tabs at all, just list a single line here.'),
+      '#default_value' => $config->get('calendars') ?: "8030|Events\n16219|Library Displays|no-hours",
+      '#description' => $this->t('One calendar per line, as "calendar ID[,ID...]|Tab label[|no-hours]" - e.g. "8030|Events" or "8030,8031|Combined View" to merge several LibCal calendars into one tab. Each line becomes its own switchable tab above the chart, in the order listed here - the first line is shown by default. Calendar IDs come from LibCal Admin > Calendars. Add "|no-hours" at the end of a line for a calendar whose events aren\'t tied to building hours (e.g. always-visible physical displays) - that tab hides the Opens/Closes captions and the open/closed indicator, which would otherwise describe something unrelated to what it shows. If you only ever want one combined view with no tabs at all, just list a single line here.'),
       '#required' => TRUE,
     ];
 
@@ -88,23 +88,16 @@ class SettingsForm extends ConfigFormBase {
       '#max' => 30,
     ];
 
-    $form['display']['day_start_hour'] = [
-      '#type' => 'number',
-      '#title' => $this->t('Day starts at (24h)'),
-      '#default_value' => $config->get('day_start_hour') ?? 8,
-      '#min' => 0,
-      '#max' => 23,
-      '#description' => $this->t('The display window each day column covers - events (or portions of events) outside it are clipped, and it\'s also the baseline the "Opens at"/"Closes at" hours captions compare against (see "Hours feed URL" below). Typically your earliest building opening hour.'),
-    ];
-
-    $form['display']['day_end_hour'] = [
-      '#type' => 'number',
-      '#title' => $this->t('Day ends at (24h)'),
-      '#default_value' => $config->get('day_end_hour') ?? 21,
-      '#min' => 1,
-      '#max' => 24,
-    ];
-
+    // "Day starts at"/"Day ends at" used to live here. They dated from the
+    // original time-axis layout, where a day column's width was a time
+    // scale and events were positioned within that window. Bars have been
+    // full-width and stacked (sorted by start time, not placed by it) for
+    // a long time, and the hours captions stopped comparing against the
+    // window before that - so both fields had no remaining effect except
+    // an actively harmful one: they clipped event start times, which
+    // mis-sorted anything outside the window and silently dropped
+    // multi-day events that fell entirely outside it. Removed in favour of
+    // reporting each event's real start time. See libcal_gantt_update_10001().
     $form['display']['timezone'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Timezone'),
@@ -228,8 +221,6 @@ class SettingsForm extends ConfigFormBase {
       ->set('event_limit', (int) $form_state->getValue('event_limit'))
       ->set('cache_ttl', (int) $form_state->getValue('cache_ttl'))
       ->set('timezone', (string) $form_state->getValue('timezone'))
-      ->set('day_start_hour', (int) $form_state->getValue('day_start_hour'))
-      ->set('day_end_hour', (int) $form_state->getValue('day_end_hour'))
       ->set('hours_feed_url', trim((string) $form_state->getValue('hours_feed_url')))
       ->set('hours_cache_ttl', (int) $form_state->getValue('hours_cache_ttl'))
       ->set('campus_rows', (string) $form_state->getValue('campus_rows'))
@@ -267,7 +258,7 @@ class SettingsForm extends ConfigFormBase {
 
     $config->save();
 
-    // Credentials or the display window changed - drop any cached token
+    // Credentials or display settings changed - drop any cached token
     // and event lists so the new settings take effect immediately rather
     // than waiting out the old cache TTL.
     $this->cacheTagsInvalidator->invalidateTags([LibCalClient::CACHE_TAG]);

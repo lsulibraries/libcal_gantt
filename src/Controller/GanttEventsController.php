@@ -48,8 +48,6 @@ class GanttEventsController extends ControllerBase {
       $timezone = new \DateTimeZone('UTC');
     }
 
-    $dayStartHour = (int) ($config->get('day_start_hour') ?? 8);
-    $dayEndHour = (int) ($config->get('day_end_hour') ?? 21);
     $weekdayCount = max(1, (int) ($config->get('weekday_count') ?: 10));
     $onlineKeywords = array_values(array_filter(array_map(
       static fn (string $keyword): string => strtolower(trim($keyword)),
@@ -144,7 +142,7 @@ class GanttEventsController extends ControllerBase {
 
     $events = [];
     foreach ($rawEvents as $event) {
-      $prepared = $this->prepareEvent($event, $eventDaySet, $timezone, $dayStartHour, $dayEndHour, $onlineKeywords, $campusRows, $onlineRowLabel);
+      $prepared = $this->prepareEvent($event, $eventDaySet, $timezone, $onlineKeywords, $campusRows, $onlineRowLabel);
       if ($prepared) {
         $events[] = $prepared;
       }
@@ -199,8 +197,6 @@ class GanttEventsController extends ControllerBase {
 
     $response = new JsonResponse([
       'days' => $days,
-      'dayStartHour' => $dayStartHour,
-      'dayEndHour' => $dayEndHour,
       'rows' => $rowLabels,
       'events' => $events,
       'hours' => $hours,
@@ -381,7 +377,7 @@ class GanttEventsController extends ControllerBase {
    *   case is deliberate filtering, not a bug: only events belonging to
    *   an allowlisted row are shown at all.
    */
-  protected function prepareEvent(array $event, array $daySet, \DateTimeZone $timezone, int $dayStartHour, int $dayEndHour, array $onlineKeywords, array $campusRows, string $onlineRowLabel): ?array {
+  protected function prepareEvent(array $event, array $daySet, \DateTimeZone $timezone, array $onlineKeywords, array $campusRows, string $onlineRowLabel): ?array {
     if (empty($event['start'])) {
       return NULL;
     }
@@ -411,24 +407,41 @@ class GanttEventsController extends ControllerBase {
       $dayKey = $cursor->format('Y-m-d');
 
       if (isset($daySet[$dayKey])) {
-        $dayOpen = (clone $cursor)->setTime($dayStartHour, 0, 0);
-        $dayClose = (clone $cursor)->setTime($dayEndHour, 0, 0);
-        $segmentStart = max($start, $dayOpen);
-        $segmentEnd = min($end, $dayClose);
+        // Clipped to the calendar day itself - midnight to midnight - so
+        // a multi-day event reports the right start time on each day it
+        // touches (a Mon 10:00 PM - Wed 2:00 AM run starts at 22:00 on
+        // Monday and at 00:00 on Tuesday and Wednesday).
+        //
+        // Deliberately NOT clipped to a configured display window. It
+        // used to be, back when a day column's width was a time axis and
+        // bars were positioned/scaled within it. Once bars became
+        // full-width and stacked (sorted by start time rather than
+        // placed by it), that clamp stopped having anything to position
+        // and became actively harmful: an event outside the window got
+        // its start rewritten to the window's opening hour, so a 9:30 PM
+        // program sorted to the TOP of the cell above a 9:00 AM one, and
+        // a multi-day event entirely outside the window produced no
+        // segments at all and was dropped by the empty check below -
+        // disappearing from the chart with no trace. See the
+        // "day_start_hour/day_end_hour" section in the architecture doc.
+        $dayStart = clone $cursor;
+        $dayEnd = (clone $cursor)->modify('+1 day');
+        $segmentStart = max($start, $dayStart);
+        $segmentEnd = min($end, $dayEnd);
 
-        if ($segmentEnd > $segmentStart) {
+        // Real overlap is required, so an event finishing exactly at
+        // midnight doesn't also claim the following day. The one
+        // exception is a zero-length event (LibCal gave no end time, or
+        // an end before its start) - that still belongs on its own day.
+        $isInstant = $end == $start;
+        if ($segmentEnd > $segmentStart || ($isInstant && $dayKey === $start->format('Y-m-d'))) {
           $segments[$dayKey] = [
             'startHour' => $this->toHourFraction($segmentStart),
-            'endHour' => $this->toHourFraction($segmentEnd),
-          ];
-        }
-        elseif (count($daySet) && $start->format('Y-m-d') === $end->format('Y-m-d') && $dayKey === $start->format('Y-m-d')) {
-          // Same-day event entirely outside the configured display
-          // hours (e.g. an early-morning setup task) - still show a
-          // thin marker rather than silently dropping it.
-          $segments[$dayKey] = [
-            'startHour' => $dayStartHour,
-            'endHour' => min($dayEndHour, $dayStartHour + 0.25),
+            // A segment running past this day's end is reported as 24.0
+            // rather than wrapping around to 0.0 at the next midnight.
+            'endHour' => $segmentEnd->format('Y-m-d') === $dayKey
+              ? $this->toHourFraction($segmentEnd)
+              : 24.0,
           ];
         }
       }
@@ -750,14 +763,13 @@ class GanttEventsController extends ControllerBase {
         // the location stays open through the end of that calendar day
         // (e.g. "7am - 12am"), not that it closes at the day's own
         // start - parseHourString() has no way to tell those apart from
-        // the string alone, so without this a fully-open day would
-        // otherwise get a spurious "Closes 12:00 AM" caption (0 being
-        // less than practically any configured "day ends at" hour).
-        // Representing it as 24 instead makes the appendClosingCaption()
-        // comparison ("does it close before the display window ends?")
-        // correctly treat this as closing AFTER the window, i.e. no
-        // caption needed. Only applied to the closing side - an actual
-        // midnight OPENING time (a 24-hour location) should stay 0.
+        // the string alone. Representing it as 24 keeps every downstream
+        // comparison ordered correctly: gantt-timeline.js's
+        // computeRowOpenStatus() tests `now >= openHour && now <
+        // closeHour`, which with a closeHour of 0 can never be true and
+        // would report a 7am-midnight location as closed all day long.
+        // Only applied to the closing side - an actual midnight OPENING
+        // time (a 24-hour location) should stay 0.
         if ($toHour === 0.0) {
           $toHour = 24.0;
         }

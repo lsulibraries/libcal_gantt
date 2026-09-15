@@ -1,0 +1,54 @@
+<?php
+
+/**
+ * @file
+ * Install/update hooks for the LibCal Gantt Timeline module.
+ */
+
+declare(strict_types=1);
+
+/**
+ * Removes the obsolete day_start_hour / day_end_hour settings.
+ *
+ * These dated from the module's original time-axis layout, where each day
+ * column's width was a time scale and event bars were positioned and sized
+ * within that window. Bars have been full-width and vertically stacked
+ * (sorted by start time rather than placed by it) since well before this
+ * update, and the building-hours captions stopped being compared against
+ * the window earlier still.
+ *
+ * That left the two settings with no legitimate effect and one harmful
+ * one: GanttEventsController::prepareEvent() still clipped every event's
+ * per-day segment to the window, which rewrote the start time of anything
+ * falling outside it. A 9:30 PM program was reported as starting at the
+ * window's opening hour and therefore sorted above a 9:00 AM event in the
+ * same cell, and a multi-day event lying entirely outside the window
+ * produced no segments at all and was discarded before it ever reached the
+ * chart. Events now report their real start time, clipped only to the
+ * calendar day.
+ *
+ * Existing sites keep the two orphaned keys in saved config until this
+ * runs, which would otherwise show up as config with no matching schema.
+ */
+function libcal_gantt_update_10001(): string {
+  $config = \Drupal::configFactory()->getEditable('libcal_gantt.settings');
+
+  $removed = [];
+  foreach (['day_start_hour', 'day_end_hour'] as $key) {
+    if ($config->get($key) !== NULL) {
+      $removed[] = $key;
+      $config->clear($key);
+    }
+  }
+
+  if (!$removed) {
+    return 'No obsolete display-window settings were present; nothing to remove.';
+  }
+
+  $config->save(TRUE);
+
+  return sprintf(
+    'Removed obsolete setting(s): %s. Events now report their real start time rather than one clipped to a display window.',
+    implode(', ', $removed)
+  );
+}

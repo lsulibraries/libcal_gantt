@@ -1,13 +1,11 @@
 host: ''
 client_id: ''
 client_secret: ''
-calendars: "8030|Events\n16219|Library Displays"
+calendars: "8030|Events\n16219|Library Displays|no-hours"
 weekday_count: 10
 event_limit: 100
 cache_ttl: 900
 timezone: ''
-day_start_hour: 8
-day_end_hour: 21
 hours_feed_url: ''
 hours_cache_ttl: 3600
 campus_rows: "261|Main Library\n262|Hill Memorial Library"
