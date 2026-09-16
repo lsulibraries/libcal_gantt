@@ -78,7 +78,7 @@ block.settings.libcal_gantt_chart:
       label: 'Heading'
     homepage_days:
       type: integer
-      label: 'Days shown before "Show more days"'
+      label: 'Days shown before "Show more"'
     full_calendar_url:
       type: string
       label: 'Full calendar URL'

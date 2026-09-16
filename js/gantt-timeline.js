@@ -58,14 +58,39 @@
   const LIVE_REFRESH_INTERVAL_MS = 60000;
 
   /**
-   * How many day cards the homepage variant reveals at a time - both on
-   * first render and per "Show more days" click (buildHomepageMoreButton()).
-   * Three by default because that is exactly the width of the card grid on
-   * a wide screen, so every click adds one visually complete row instead
-   * of a ragged partial one. Overridable per block instance through the
-   * block's "Days per reveal" setting - see readOptions().
+   * How many day cards the homepage variant reveals on FIRST RENDER.
+   * Three by default: enough to answer "is anything on this week?"
+   * without pushing the rest of the homepage below the fold. Overridable
+   * per block instance through the block's "Days per reveal" setting -
+   * see readOptions().
+   *
+   * Subsequent reveals are not this number. Each click finishes the
+   * current week band instead, so the added cards always form a complete
+   * row - see nextHomepageRevealTarget(). This constant remains the
+   * fallback increment for a feed with no weekend data to take a boundary
+   * from.
    */
   const HOMEPAGE_DAYS_PER_REVEAL = 3;
+
+  /**
+   * How many grid tracks a week band gets ONCE THE VISITOR HAS EXPANDED.
+   * Five - one per weekday - so bands of three, four and five cards all
+   * present the same card width down the column instead of three
+   * different widths stacked on each other.
+   *
+   * It is deliberately NOT applied to the unexpanded teaser. Forcing five
+   * tracks on a first render of three cards leaves two empty tracks
+   * painting as gaps, which is the opposite of what the teaser is for:
+   * three cards filling the block's width, readable at a glance, no
+   * dead space. So the track count is written onto the band container as
+   * a custom property - the card count while collapsed, five after the
+   * first reveal - and the CSS reads it. See buildHomepage().
+   */
+  const HOMEPAGE_WEEK_TRACKS = 5;
+
+  // Stable per-instance IDs let the rebuilt controls keep their ARIA
+  // relationships across theme switches, filtering, and pagination.
+  let chartInstanceSequence = 0;
 
   /**
    * localStorage key holding the visitor's own light/dark choice (see
@@ -157,8 +182,9 @@
     const state = {
       // Per-instance display settings - see readOptions().
       options: options,
+      instanceId: 'libcal-gantt-' + (++chartInstanceSequence),
       // How many of state.days the homepage variant currently reveals,
-      // growing by options.homepageDays per "Show more days" click (see
+      // growing by a whole week band per "Show more" click (see
       // loadMoreHomepageDays()). Unused by the grid variant, which pages
       // by fetching rather than by revealing.
       homepageVisibleDays: options.homepageDays,
@@ -379,6 +405,9 @@
 
     if (isFirstLoad) {
       container.innerHTML = '';
+      const status = buildLiveRegion(state);
+      status.textContent = Drupal.t('Loading events.');
+      container.appendChild(status);
       container.appendChild(loadingMessage());
     }
     else {
@@ -405,11 +434,18 @@
           onLoaded();
         }
         renderChart(container, endpoint, state);
+        const status = container.querySelector('.libcal-gantt-chart__status');
+        if (status) {
+          status.textContent = Drupal.t('Calendar updated.');
+        }
       })
       .catch((error) => {
         state.loading = false;
         if (isFirstLoad) {
           container.innerHTML = '';
+          const status = buildLiveRegion(state);
+          status.textContent = Drupal.t('Events are unavailable right now.');
+          container.appendChild(status);
           container.appendChild(errorMessage());
         }
         else {
@@ -516,6 +552,7 @@
     // container's children, and a theme switch re-renders on purpose so
     // the toggle's own label stays truthful - see buildThemeToggle().
     applyTheme(container, state.theme);
+    container.appendChild(buildLiveRegion(state));
 
     const isHomepage = state.options.renderMode === 'homepage';
     container.classList.toggle('libcal-gantt-chart--homepage', isHomepage);
@@ -553,7 +590,8 @@
       return;
     }
 
-    const rows = buildRows(state.rowLabels, state.events);
+    const renderEvents = getRenderableEvents(state);
+    const rows = buildRows(state.rowLabels, renderEvents);
     const scale = {
       hours: state.hours,
       weekends: state.weekends,
@@ -580,16 +618,22 @@
     // homepage rendered the full ten-day grid first and then appended the
     // day cards underneath it - two views of the same data stacked in one
     // block, which is exactly what the banner was showing.
+    const legend = state.options.showLegend
+      ? buildLegend(state, calendarShowHours, isHomepage)
+      : null;
+
     if (isHomepage) {
       // One responsive renderer, not the grid/agenda pair: the card grid
       // collapses from three columns to one on a phone through CSS alone,
       // so there is no second view to keep in sync and only one "show
       // more" control to reason about.
-      container.appendChild(buildHomepage(container, endpoint, state, calendarShowHours));
-      container.appendChild(buildHomepageMoreButton(container, endpoint, state));
+      // "Show more" is built into the homepage header alongside the
+      // "Full calendar" CTA rather than appended here - see
+      // buildHomepageHeader().
+      container.appendChild(buildHomepage(container, endpoint, state, calendarShowHours, legend));
     }
     else {
-      container.appendChild(buildGrid(state.days, rows, scale, calendarShowHours));
+      container.appendChild(buildGrid(state.days, rows, scale, calendarShowHours, state));
       container.appendChild(buildAgenda(container, endpoint, state, calendarShowHours));
       // Two separate "show more" controls, like the grid/agenda split
       // above - both always in the DOM, CSS decides which is visible. The
@@ -600,13 +644,14 @@
       container.appendChild(buildMobileMoreButton(container, endpoint, state));
     }
 
-    // Deliberately OUTSIDE the chart element, after the "show more"
-    // controls: the legend explains the chart, it is not part of it. Kept
-    // out of the grid/card DOM so it can never be mistaken for a row, a
-    // day column or an event, and so screen readers reach the actual
-    // events first rather than wading through a key to get to them.
-    if (state.options.showLegend) {
-      container.appendChild(buildLegend(state, calendarShowHours, isHomepage));
+    // Keep the legend inside a footer band rather than floating below the
+    // component. Homepage mode folds it into the live-hours footer; the
+    // full-page mode gets the same contained treatment after its controls.
+    if (!isHomepage && legend) {
+      const footer = document.createElement('div');
+      footer.className = 'libcal-gantt-chart__footer';
+      footer.appendChild(legend);
+      container.appendChild(footer);
     }
   }
 
@@ -624,68 +669,192 @@
    * paying for a location axis that the answer does not need, in the
    * scarcest vertical space on the site.
    */
-  function buildHomepage(container, endpoint, state, calendarShowHours) {
+  function buildHomepage(container, endpoint, state, calendarShowHours, legend) {
     const wrap = document.createElement('section');
     wrap.className = 'libcal-gantt-home';
 
     wrap.appendChild(buildHomepageHeader(container, endpoint, state));
 
-    const grid = document.createElement('div');
-    grid.className = 'libcal-gantt-home__days';
+    // One element per WEEK BAND, stacked: a card grid, then a weekend
+    // strip, then the next week's card grid. See the band loop below for
+    // why the strip is no longer a member of the grid it follows.
+    const bands = document.createElement('div');
+    bands.className = 'libcal-gantt-home__bands';
+    bands.id = state.instanceId + '-homepage-bands';
 
     const days = state.days.slice(0, state.homepageVisibleDays);
+
+    // TWO SIZING MODES, and the whole difference between them is the track
+    // count handed to the CSS.
+    //
+    // Collapsed (first render, `homepageDays` cards, three by default) is a
+    // TEASER: as many tracks as there are cards, so the cards divide the
+    // full width between them and the block stays the compact strip that
+    // earns its place at the top of the homepage.
+    //
+    // Expanded (any state past the first reveal) is a CALENDAR: five fixed
+    // weekday tracks, so a four-card band and a five-card band below it
+    // line up column for column and every card makes the same decision
+    // about whether its weekday name fits.
+    //
+    // Read from `days.length`, not from the option, so a feed that returns
+    // fewer days than configured still fills the width rather than
+    // reserving tracks for cards that do not exist.
+    const expanded = state.homepageVisibleDays
+      > ((state.options && state.options.homepageDays) || HOMEPAGE_DAYS_PER_REVEAL);
+    if (!expanded) {
+      bands.classList.add('libcal-gantt-home__bands--teaser');
+    }
+    bands.style.setProperty(
+      '--libcal-gantt-band-tracks',
+      String(expanded ? HOMEPAGE_WEEK_TRACKS : Math.max(days.length, 1))
+    );
 
     // Same segments-based grouping the agenda uses: a multi-day event
     // contributes one entry per day it covers, so a week-long display
     // shows up on each of the days actually on screen rather than only on
     // the day it started - which for a long-running exhibit is usually
     // some date well before the visitor is looking.
+    const displayCalendar = isLibraryDisplaysCalendar(state);
     const eventsByDay = new Map();
     days.forEach((day) => eventsByDay.set(day, []));
-    state.events.forEach((event) => {
-      Object.keys(event.segments || {}).forEach((day) => {
-        if (eventsByDay.has(day)) {
-          eventsByDay.get(day).push({ event: event, segment: event.segments[day] });
-        }
+    if (!displayCalendar) {
+      getRenderableEvents(state).forEach((event) => {
+        Object.keys(event.segments || {}).forEach((day) => {
+          if (eventsByDay.has(day)) {
+            eventsByDay.get(day).push({ event: event, segment: event.segments[day] });
+          }
+        });
       });
-    });
+    }
 
     const weekendByAfter = new Map();
     (state.weekends || []).forEach((weekend) => weekendByAfter.set(weekend.after, weekend));
 
-    days.forEach((day) => {
-      grid.appendChild(buildHomepageDayCard(day, eventsByDay.get(day) || [], state, calendarShowHours));
+    // A run of consecutive weekdays gets its own grid, and the weekend
+    // strip is appended BETWEEN grids rather than as a member of one.
+    //
+    // This is the fix for the holes that opened up when more days were
+    // revealed. The strip spans the full width, so a grid containing one
+    // forced its cards onto more than one row, and the leftover tracks on
+    // the short row painted as gaps in the divider colour: four cards, a
+    // strip, then two cards came out as a 4-and-a-hole row above a
+    // 2-and-three-holes row.
+    //
+    // One grid per week band means every grid holds one row of nothing but
+    // cards. Each grid then takes its track count from
+    // `--libcal-gantt-band-tracks` above: the card count while the block
+    // is still the collapsed teaser, five fixed weekday tracks once it has
+    // been expanded, so bands of four, five and three cards all present the
+    // same card width instead of three different ones stacked on top of
+    // each other.
+    let band = null;
+    let bandDays = [];
+    const startBand = (firstDay) => {
+      bandDays = [firstDay];
+      const weekHeading = document.createElement('h3');
+      weekHeading.className = 'libcal-gantt-home__week-heading';
+      weekHeading.id = state.instanceId + '-week-' + firstDay;
+      weekHeading.textContent = Drupal.t('Week of @date', {
+        '@date': formatDayLabel(firstDay, true),
+      });
+      bands.appendChild(weekHeading);
+
+      band = document.createElement('div');
+      band.className = 'libcal-gantt-home__days';
+      band.setAttribute('role', 'group');
+      band.setAttribute('aria-labelledby', weekHeading.id);
+      bands.appendChild(band);
+      return band;
+    };
+
+    const marked = new Set(weekendByAfter.keys());
+
+    days.forEach((day, index) => {
+      const currentBand = band || startBand(day);
+      if (bandDays[bandDays.length - 1] !== day) {
+        bandDays.push(day);
+      }
+      currentBand.appendChild(
+        buildHomepageDayCard(day, eventsByDay.get(day) || [], state, calendarShowHours, displayCalendar)
+      );
+
+      if (isBandEnd(days, index, marked) && displayCalendar) {
+        appendHomepageDisplaySpans(currentBand, bandDays, state);
+      }
 
       // A weekend is not a day column here (the loaded day list skips
       // Saturday and Sunday), so it renders as a full-width strip after
-      // the Friday card instead of competing for one of the three card
-      // slots - a weekend with nothing on and normal hours is worth one
-      // quiet line, not a third of the visitor's attention.
+      // the Friday card instead of competing for one of the card slots - a
+      // weekend with nothing on and normal hours is worth one quiet line,
+      // not a third of the visitor's attention.
       const weekend = weekendByAfter.get(day);
       if (weekend) {
         const strip = buildHomepageWeekendStrip(weekend, state, calendarShowHours);
         if (strip) {
-          grid.appendChild(strip);
+          bands.appendChild(strip);
         }
+      }
+
+      // The band closes at the end of a week whether or not a strip was
+      // drawn for it. Splitting only on a rendered strip would put two
+      // weeks' cards in one row on a quiet weekend with no hours to
+      // report, and the reveal is sized in whole weeks - so the row would
+      // hold more cards than fit and wrap, which is the shape the holes
+      // came from. Left null rather than opened here so a week ending the
+      // revealed range does not leave a stray empty row behind it.
+      if (isBandEnd(days, index, marked)) {
+        band = null;
       }
     });
 
-    wrap.appendChild(grid);
+    // The visible range can end in the middle of a week (the homepage
+    // starts with only Tue–Thu). Render that partial band too:
+    // appendHomepageDisplaySpans() intersects each merged event with the
+    // days currently in bandDays, so a display is visible immediately and
+    // naturally grows when Show more rerenders the band with more days.
+    if (displayCalendar && band && bandDays.length) {
+      appendHomepageDisplaySpans(band, bandDays, state);
+    }
 
+    wrap.appendChild(bands);
+
+    const reveal = document.createElement('div');
+    reveal.className = 'libcal-gantt-home__reveal';
+    const less = buildHomepageLessButton(container, endpoint, state);
+    if (less) {
+      reveal.appendChild(less);
+    }
+    const more = buildHomepageMoreButton(container, endpoint, state);
+    if (more) {
+      reveal.appendChild(more);
+    }
+    if (reveal.childNodes.length) {
+      wrap.appendChild(reveal);
+    }
+
+    const footer = document.createElement('div');
+    footer.className = 'libcal-gantt-home__footer';
     if (calendarShowHours) {
       const status = buildHomepageStatusBar(state);
       if (status) {
-        wrap.appendChild(status);
+        footer.appendChild(status);
       }
+    }
+    if (legend) {
+      footer.appendChild(legend);
+    }
+    if (footer.childNodes.length) {
+      wrap.appendChild(footer);
     }
 
     return wrap;
   }
 
   /**
-   * The homepage header bar: heading, the covered date range, the
-   * calendar tabs, the theme toggle and the "Full calendar" call to
-   * action, all on one line (wrapping on narrow screens).
+   * The homepage header bar: heading and covered range on the left, the
+   * quiet calendar filter directly beneath that range, and one primary
+   * Full calendar CTA on the right.
    *
    * The date range is spelled out because the card grid deliberately
    * shows only a few days - without it, "This week at the Libraries" over
@@ -716,19 +885,11 @@
       // buildHomepageDayCard().
       const rangeOf = (endpoint) => (days.length === 1
         ? endpoint(days[0])
-        : Drupal.t('@from – @to', {
+        : Drupal.t('@from to @to', {
           '@from': endpoint(days[0]),
           '@to': endpoint(days[days.length - 1]),
         }));
 
-      // "Central" is stated rather than derived from the visitor's clock,
-      // and that is deliberate: every time label in this block is
-      // formatted server-side in the SITE's configured timezone (see
-      // todayString()), so a visitor reading this from another timezone is
-      // still looking at library-local times. Reading the browser's zone
-      // here would confidently mislabel them. It goes through Drupal.t()
-      // so a library on another campus can restate it through interface
-      // translation without touching this file.
       appendRangeForm(range, 'libcal-gantt-home__range-long', rangeOf(formatRangeEndpoint));
       appendRangeForm(range, 'libcal-gantt-home__range-short', rangeOf((day) => formatDayLabel(day, false)));
       headings.appendChild(range);
@@ -736,13 +897,16 @@
 
     header.appendChild(headings);
 
+    const tabs = buildCalendarTabs(container, endpoint, state);
+    if (tabs) {
+      headings.appendChild(tabs);
+    }
+
     const controls = document.createElement('div');
     controls.className = 'libcal-gantt-home__controls';
 
-    const tabs = buildCalendarTabs(container, endpoint, state);
-    if (tabs) {
-      controls.appendChild(tabs);
-    }
+    // The reveal controls live below the cards so the header has one clear
+    // primary action: the gold Full calendar CTA. See buildHomepage().
 
     // No theme toggle in this variant, unlike the grid header (see
     // renderChart()). The homepage block is a teaser embedded in a page
@@ -781,7 +945,7 @@
    * of tokens across both variants rather than a second parallel
    * mechanism to keep in sync.
    */
-  function buildHomepageDayCard(day, entries, state, calendarShowHours) {
+  function buildHomepageDayCard(day, entries, state, calendarShowHours, suppressEmpty) {
     const status = dayStatus(day);
 
     const card = document.createElement('article');
@@ -829,6 +993,22 @@
       badge.textContent = Drupal.t('Today');
       head.appendChild(badge);
     }
+    else if (day === tomorrowDateKey()) {
+      // Same badge shape, deliberately quieter: outlined and muted rather
+      // than filled gold. Two filled gold pills side by side would read as
+      // two equally urgent days and cost today its status as the one thing
+      // the eye lands on first - the point of the Today badge is that it
+      // is the only one.
+      //
+      // Keyed on the real date, so this simply does not appear when
+      // tomorrow is not a card: on a Friday, tomorrow is Saturday, which
+      // this variant folds into the weekend strip - and Monday must not be
+      // labelled "Tomorrow" just for being the next card along.
+      const badge = document.createElement('span');
+      badge.className = 'libcal-gantt-home__today-badge libcal-gantt-home__today-badge--tomorrow';
+      badge.textContent = Drupal.t('Tomorrow');
+      head.appendChild(badge);
+    }
 
     card.appendChild(head);
 
@@ -849,27 +1029,77 @@
     if (sorted.length) {
       const list = document.createElement('ul');
       list.className = 'libcal-gantt-home__list';
-      sorted.forEach((entry) => list.appendChild(buildHomepageItem(entry.event)));
+      sorted.slice(0, 3).forEach((entry) => list.appendChild(buildHomepageItem(entry.event)));
       card.appendChild(list);
+      if (sorted.length > 3) {
+        card.appendChild(buildHomepageOverflowLink(day, sorted.length - 3, state));
+      }
     }
-    else {
+    else if (!suppressEmpty) {
       const empty = document.createElement('p');
       empty.className = 'libcal-gantt-home__empty';
       empty.textContent = Drupal.t('Nothing scheduled');
       card.appendChild(empty);
     }
 
-    // Hours are shown on the card only when it has no events to show.
-    // On a busy day the footer status bar already answers "is the library
-    // open right now?" and repeating the full open-close range on every
-    // card would crowd out the events themselves; on an empty card the
-    // line is genuinely useful and fills space that would otherwise read
-    // as a rendering failure.
-    if (calendarShowHours && !sorted.length) {
+    // Keep opening hours visible on every card. The hours answer a separate
+    // question from the event list, including on busy days.
+    if (calendarShowHours) {
       appendHomepageHoursLine(card, day, state);
     }
 
     return card;
+  }
+
+  /**
+   * Library Displays are weekly/location records, not daily appointments.
+   * Keep one accessible item in the week's card grid and place it across
+   * the weekday columns it covers; normal Events never use this layer.
+   */
+  function appendHomepageDisplaySpans(band, bandDays, state) {
+    const dayIndex = new Map(bandDays.map((day, index) => [day, index + 1]));
+    const spans = getRenderableEvents(state).map((event) => {
+      const covered = Object.keys(event.segments || {}).filter((day) => dayIndex.has(day));
+      if (!covered.length) {
+        return null;
+      }
+      const first = Math.min.apply(null, covered.map((day) => dayIndex.get(day)));
+      const last = Math.max.apply(null, covered.map((day) => dayIndex.get(day)));
+      return { event: event, first: first, last: last };
+    }).filter(Boolean).sort((a, b) => a.first - b.first || a.last - b.last);
+
+    const laneEnds = [];
+    spans.forEach((span) => {
+      let lane = laneEnds.findIndex((end) => end < span.first);
+      if (lane === -1) {
+        lane = laneEnds.length;
+      }
+      laneEnds[lane] = span.last;
+      const item = buildHomepageItem(span.event);
+      item.classList.add('libcal-gantt-home__item--span');
+      item.style.gridColumn = span.first + ' / span ' + (span.last - span.first + 1);
+      item.style.gridRow = String(lane + 2);
+      item.setAttribute('aria-label', span.event.title + ', ' + Drupal.t('Ongoing'));
+      band.appendChild(item);
+    });
+    if (laneEnds.length) {
+      band.classList.add('libcal-gantt-home__days--display-spans');
+      band.style.setProperty('--libcal-gantt-display-lanes', String(laneEnds.length));
+    }
+  }
+
+  function buildHomepageOverflowLink(day, count, state) {
+    const link = document.createElement(state.options.fullCalendarUrl ? 'a' : 'span');
+    link.className = 'libcal-gantt-home__overflow';
+    link.textContent = Drupal.t('+@count more', { '@count': count });
+    if (state.options.fullCalendarUrl) {
+      link.href = state.options.fullCalendarUrl;
+      link.setAttribute('aria-label', Drupal.t('Show @count more events for @date in the full calendar', {
+        '@count': count,
+        '@date': formatDayLabel(day, true),
+      }));
+    }
+    return link;
   }
 
   function appendHomepageHoursLine(card, day, state) {
@@ -884,7 +1114,7 @@
     if (!parts.length) {
       return;
     }
-    const line = document.createElement('p');
+    const line = document.createElement('footer');
     line.className = 'libcal-gantt-home__day-hours';
     line.textContent = parts.join(' · ');
     card.appendChild(line);
@@ -912,7 +1142,7 @@
 
     const time = document.createElement('span');
     time.className = 'libcal-gantt-home__time';
-    if (allDay) {
+    if (allDay || event.ongoing) {
       // "Ongoing" rather than "All day": the events that hit this branch
       // are overwhelmingly exhibits, displays and donation drives that run
       // for weeks, and "All day" invites the reading that they end at
@@ -946,7 +1176,7 @@
     // The tag is the part a visitor scans for ("can I attend this from my
     // desk, or do I have to walk to Hill?"); the room number only matters
     // once they have decided to go, so it stays quiet beside it.
-    const locationText = event.location || event.row || '';
+    const locationText = event.isOnline ? Drupal.t('Online') : (event.location || event.row || '');
     if (locationText) {
       const location = document.createElement('span');
       location.className = 'libcal-gantt-home__item-location';
@@ -988,10 +1218,39 @@
    */
   function buildHomepageWeekendStrip(weekend, state, calendarShowHours) {
     const events = [];
+    const mergedWeekend = new Map();
     (state.rowLabels || []).forEach((rowLabel) => {
       const rowEvents = (weekend.events && weekend.events[rowLabel]) || [];
-      rowEvents.forEach((event) => events.push(event));
+      rowEvents.forEach((event) => {
+        if (!isLibraryDisplaysCalendar(state)) {
+          events.push(event);
+          return;
+        }
+        // Weekend payloads are occurrence-shaped, unlike the weekday
+        // `state.events` collection. Fold them by the same week/location
+        // identity used by getRenderableEvents(), so a display that also
+        // appears on Saturday and Sunday is still one homepage item.
+        const date = new Date(event.day + 'T12:00:00');
+        const monday = new Date(date);
+        const weekday = (date.getDay() + 6) % 7;
+        monday.setDate(date.getDate() - weekday);
+        const week = monday.toISOString().slice(0, 10);
+        const key = [week, rowLabel, event.location || ''].join('\\u0000');
+        if (!mergedWeekend.has(key)) {
+          mergedWeekend.set(key, Object.assign({}, event));
+        }
+        const target = mergedWeekend.get(key);
+        if (event.title && event.title !== target.title) {
+          const titles = target.title.split(' · ');
+          if (!titles.includes(event.title)) {
+            target.title += ' · ' + event.title;
+          }
+        }
+      });
     });
+    if (isLibraryDisplaysCalendar(state)) {
+      mergedWeekend.forEach((event) => events.push(event));
+    }
 
     const hourLines = [];
     if (calendarShowHours) {
@@ -1038,9 +1297,10 @@
         entry.target = '_blank';
         entry.rel = 'noopener noreferrer';
       }
+      const onlinePrefix = event.isOnline ? Drupal.t('Online') + ' · ' : '';
       entry.textContent = isAllDayLabel(event.startLabel, event.endLabel)
-        ? dayAbbrev + ' · ' + event.title
-        : dayAbbrev + ' ' + event.startLabel + ' · ' + event.title;
+        ? dayAbbrev + ' · ' + onlinePrefix + event.title
+        : dayAbbrev + ' ' + event.startLabel + ' · ' + onlinePrefix + event.title;
       detail.appendChild(entry);
     });
 
@@ -1056,7 +1316,7 @@
   }
 
   /**
-   * The live "open right now" footer, one pill per location row. This is
+   * The live "open right now" status strip, one pill per location row.
    * the single piece of information a homepage visitor is most likely to
    * have come for, and it is the reason the variant re-renders on
    * LIVE_REFRESH_INTERVAL_MS - a pill reading "Open now" an hour after
@@ -1254,16 +1514,25 @@
   function appendRangeForm(range, className, span) {
     const form = document.createElement('span');
     form.className = className;
-    form.textContent = Drupal.t('@span · all times Central', { '@span': span });
+    form.textContent = span;
     range.appendChild(form);
   }
 
   /**
-   * The homepage variant's own "Show more days" control, separate from
-   * the grid's two - it reveals days DOWNWARD (a further row of cards
+   * The homepage variant's own "Show more" control, separate from the
+   * grid's two - it reveals days DOWNWARD (a further band of cards
    * appended beneath the current ones) rather than paging a horizontal
-   * axis, so its label and its increment both talk about days rather than
-   * weekdays or events.
+   * axis.
+   *
+   * Built into the header controls bar next to the "Full calendar" CTA
+   * rather than appended under the cards, and labelled without a count:
+   * each reveal finishes a week band, so the number of days added varies
+   * from click to click (see nextHomepageRevealTarget()).
+   *
+   * Keeps the `libcal-gantt-chart__more--homepage` and
+   * `libcal-gantt-chart__more-button` hooks that setMoreButtonState()
+   * looks for, so the loading and failed-fetch states still land on this
+   * button now that it lives somewhere else.
    *
    * Reveals from already-loaded data when it can and only hits the
    * network when it must, which is why loadMoreHomepageDays() is split out
@@ -1273,19 +1542,245 @@
    */
   function buildHomepageMoreButton(container, endpoint, state) {
     const wrap = document.createElement('div');
-    wrap.className = 'libcal-gantt-chart__more libcal-gantt-chart__more--homepage';
+    wrap.className = 'libcal-gantt-chart__more libcal-gantt-chart__more--homepage libcal-gantt-home__more';
 
+    // Describe the next band before the visitor commits to revealing it.
+    // When the target is already loaded we can state both the count and the
+    // final date; otherwise keep the promise honest and omit the date.
+    const target = nextHomepageRevealTarget(state);
+    const visible = state.homepageVisibleDays;
+    const count = Math.max(target - visible, 1);
+    const targetDay = target <= state.days.length ? state.days[target - 1] : null;
+    const label = targetDay
+      ? Drupal.t('Show @count more days · through @date', {
+        '@count': count,
+        '@date': formatDayLabel(targetDay, false),
+      })
+      : Drupal.t('Show more days');
+
+    wrap.appendChild(buildHomepageRevealButton({
+      label: label,
+      chevron: '⌄',
+      extraClass: 'libcal-gantt-chart__more-button',
+      ariaControls: state.instanceId + '-homepage-bands',
+      ariaExpanded: state.homepageVisibleDays > (state.options.homepageDays || HOMEPAGE_DAYS_PER_REVEAL),
+      onClick: () => loadMoreHomepageDays(container, endpoint, state),
+    }));
+
+    return wrap;
+  }
+
+  /**
+   * The homepage "Show less" control, or null when there is nothing to
+   * collapse.
+   *
+   * Only exists once "Show more" has actually been used: at the starting
+   * count there is no previous state to return to, and a permanently
+   * disabled or no-op button in the header would be one more thing to read
+   * past in a bar that already holds four controls. It appears and
+   * disappears rather than greying out for the same reason.
+   *
+   * Deliberately NOT given the `libcal-gantt-chart__more-button` hook -
+   * setMoreButtonState() finds its button by that class, and collapsing
+   * never loads anything, so this button must never be the one that turns
+   * into "Loading…" or "Try again".
+   */
+  function buildHomepageLessButton(container, endpoint, state) {
+    if (state.homepageVisibleDays <= (state.options.homepageDays || HOMEPAGE_DAYS_PER_REVEAL)) {
+      return null;
+    }
+
+    const wrap = document.createElement('div');
+    wrap.className = 'libcal-gantt-chart__more libcal-gantt-home__more libcal-gantt-home__more--less';
+
+    wrap.appendChild(buildHomepageRevealButton({
+      label: Drupal.t('Show less'),
+      chevron: '⌃',
+      extraClass: 'libcal-gantt-home__more-button--less',
+      ariaControls: state.instanceId + '-homepage-bands',
+      ariaExpanded: true,
+      onClick: () => collapseHomepageDays(container, endpoint, state),
+    }));
+
+    return wrap;
+  }
+
+  /**
+   * One pill button with a chevron, shared by "Show more" and "Show less"
+   * so the pair cannot drift apart in shape, size or wording style - they
+   * sit side by side, where any difference between them reads as meaning
+   * something.
+   */
+  function buildHomepageRevealButton(spec) {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'libcal-gantt-chart__more-button';
-    const increment = state.options.homepageDays;
-    button.textContent = Drupal.t('Show @count more days', { '@count': increment });
-    button.addEventListener('click', () => {
-      loadMoreHomepageDays(container, endpoint, state);
-    });
+    button.className = 'libcal-gantt-home__more-button'
+      + (spec.extraClass ? ' ' + spec.extraClass : '');
+    button.textContent = spec.label;
+    if (spec.ariaControls) {
+      button.setAttribute('aria-controls', spec.ariaControls);
+      button.setAttribute('aria-expanded', spec.ariaExpanded ? 'true' : 'false');
+    }
+    button.addEventListener('click', spec.onClick);
 
-    wrap.appendChild(button);
-    return wrap;
+    const chevron = document.createElement('span');
+    chevron.className = 'libcal-gantt-home__more-arrow';
+    chevron.setAttribute('aria-hidden', 'true');
+    chevron.textContent = spec.chevron;
+    button.appendChild(chevron);
+
+    return button;
+  }
+
+  /**
+   * Works out how many day cards the next reveal should show.
+   *
+   * Not a fixed increment. The number of columns the card grid fits is
+   * decided by the width of whatever slot the block sits in, so any fixed
+   * number is the wrong number at some widths: three more days is a
+   * ragged half-row in a five-column block and an over-long stack on a
+   * phone. What IS stable at every width is the week - so a reveal
+   * finishes the week band it is standing in, and if it is already at a
+   * Friday it reveals the next whole week.
+   *
+   * Starting from three days on a Tuesday, that reads: three cards, then
+   * Tue-Fri, then a full Mon-Fri, each one a complete band with its own
+   * grid and no short row. It is also why the button no longer names a
+   * number - the honest count changes on every click.
+   *
+   * @param {object} state
+   *   Chart state.
+   *
+   * @return {number}
+   *   Day count the next reveal should target.
+   */
+  function nextHomepageRevealTarget(state) {
+    const visible = state.homepageVisibleDays;
+    const days = state.days || [];
+    const increment = (state.options && state.options.homepageDays)
+      || HOMEPAGE_DAYS_PER_REVEAL;
+
+    // A weekend record is keyed by the weekday it follows, so its `after`
+    // value is by definition the last day of a band. Authoritative where it
+    // exists: it is right even in a week whose Friday is a holiday the feed
+    // omits entirely.
+    const marked = new Set((state.weekends || []).map((weekend) => weekend.after));
+
+    // Reveal up to and including the next band end, so what appears is
+    // always a whole week plus the weekend strip that closes it. A fixed
+    // +3 was what produced ragged reveals: from Wed it added Mon-Wed of the
+    // following week, leaving a three-card row, a two-card row and a strip
+    // wedged between them.
+    for (let i = visible; i < days.length; i++) {
+      if (isBandEnd(days, i, marked)) {
+        return i + 1;
+      }
+    }
+
+    // No band end among the days already loaded - so the reveal cannot be
+    // aligned yet. Step by the configured increment, which deliberately
+    // OVERSHOOTS the loaded range and so makes loadMoreHomepageDays() fetch
+    // a page. The boundary arrives with it and the week rhythm resumes on
+    // the click after; the alternative, revealing every loaded day, would
+    // leave the button with nothing to do and no page ever requested.
+    return visible + increment;
+  }
+
+  /**
+   * Whether days[i] is the last day of a week band.
+   *
+   * Three signals, cheapest last, because the homepage feed only sends open
+   * weekdays and any one signal can be missing from a given week:
+   *
+   * 1. The controller marked it as the day a weekend follows.
+   * 2. The next loaded day is not the next calendar day. A gap means
+   *    something unrendered sits between them - a weekend, or a closure -
+   *    which is exactly where a band should break.
+   * 3. It is a Friday. The ordinary case, and the one that still works on
+   *    the last loaded day, where there is no following day to compare
+   *    against and no weekend record yet.
+   */
+  function isBandEnd(days, i, marked) {
+    if (marked.has(days[i])) {
+      return true;
+    }
+
+    const day = new Date(days[i] + 'T00:00:00Z');
+    if (Number.isNaN(day.getTime())) {
+      return false;
+    }
+
+    if (i + 1 < days.length) {
+      const next = new Date(days[i + 1] + 'T00:00:00Z');
+      if (!Number.isNaN(next.getTime())
+        && next.getTime() - day.getTime() > 86400000) {
+        return true;
+      }
+    }
+
+    // UTC throughout: these keys are calendar squares, and reading the
+    // weekday of a midnight-local date is what shifts by one either side of
+    // a DST change.
+    return day.getUTCDay() === 5;
+  }
+
+  /**
+   * Works out how many day cards the next COLLAPSE should leave showing -
+   * the mirror of nextHomepageRevealTarget().
+   *
+   * Steps back by one week band rather than by a fixed count, for the same
+   * reason the reveal steps forward by one: a band is the unit the cards
+   * are laid out in, so collapsing by anything else would leave a part-week
+   * on screen. Never goes below the configured starting count, so "Show
+   * less" walks back exactly the path "Show more" walked forward and stops
+   * where the block began.
+   *
+   * @param {object} state
+   *   Chart state.
+   *
+   * @return {number}
+   *   Day count the next collapse should leave visible.
+   */
+  function previousHomepageRevealTarget(state) {
+    const visible = state.homepageVisibleDays;
+    const days = state.days || [];
+    const floor = (state.options && state.options.homepageDays)
+      || HOMEPAGE_DAYS_PER_REVEAL;
+    const marked = new Set((state.weekends || []).map((weekend) => weekend.after));
+
+    // From the second-to-last visible day: the last one is where the range
+    // currently ends, and if that is itself a band end then collapsing to
+    // it would change nothing.
+    for (let i = visible - 2; i >= 0; i--) {
+      if (isBandEnd(days, i, marked)) {
+        return Math.max(i + 1, floor);
+      }
+    }
+
+    return floor;
+  }
+
+  /**
+   * Collapses the homepage reveal by one band. Never fetches - it is only
+   * ever showing less of what the browser already holds, and the days it
+   * hides stay in state.days so re-expanding is instant.
+   */
+  function collapseHomepageDays(container, endpoint, state) {
+    if (state.loading) {
+      return;
+    }
+
+    const target = previousHomepageRevealTarget(state);
+    if (target === state.homepageVisibleDays) {
+      return;
+    }
+
+    state.homepageVisibleDays = target;
+    renderChart(container, endpoint, state);
+    const status = container.querySelector('.libcal-gantt-chart__status');
+    if (status) {
+      status.textContent = Drupal.t('Showing fewer days.');
+    }
   }
 
   function loadMoreHomepageDays(container, endpoint, state) {
@@ -1293,12 +1788,15 @@
       return;
     }
 
-    const increment = state.options.homepageDays;
-    const target = state.homepageVisibleDays + increment;
+    const target = nextHomepageRevealTarget(state);
 
     if (state.days.length >= target) {
       state.homepageVisibleDays = target;
       renderChart(container, endpoint, state);
+      const status = container.querySelector('.libcal-gantt-chart__status');
+      if (status) {
+        status.textContent = Drupal.t('Showing more days.');
+      }
       return;
     }
 
@@ -1328,26 +1826,46 @@
    * not on screen is worse than no legend.
    */
   function buildLegend(state, calendarShowHours, isHomepage) {
+    const renderedEvents = Array.isArray(state.events) ? state.events : [];
+    const hasAllDay = renderedEvents.some((event) => isAllDayLabel(event.startLabel, event.endLabel));
+    const hasMultiDay = renderedEvents.some((event) => Object.keys(event.segments || {}).length > 1);
+    const hasToday = (state.days || []).some((day) => dayStatus(day) === 'today')
+      || (state.weekends || []).some((weekend) =>
+        weekend.saturday === todayDateKey() || weekend.sunday === todayDateKey()
+      );
+    const hasWeekend = !isHomepage && Array.isArray(state.weekends) && state.weekends.length > 0;
+    const statuses = (state.rowLabels || [])
+      .map((rowLabel) => computeRowOpenStatus(rowLabel, state.hours))
+      .filter(Boolean);
+
+    const items = [];
+    if (hasAllDay) {
+      items.push({ modifier: 'all-day', label: Drupal.t('Ongoing / all day') });
+    }
+    if (hasToday) {
+      items.push({ modifier: 'today', label: Drupal.t('Today') });
+    }
+    if (hasMultiDay && !isHomepage) {
+      items.push({ modifier: 'multi', label: Drupal.t('Runs across several days') });
+    }
+    if (hasWeekend) {
+      items.push({ modifier: 'weekend', label: Drupal.t('Weekend') });
+    }
+    if (calendarShowHours && statuses.includes('open')) {
+      items.push({ modifier: 'open', label: Drupal.t('Open right now') });
+    }
+    if (calendarShowHours && statuses.includes('closed')) {
+      items.push({ modifier: 'closed', label: Drupal.t('Closed') });
+    }
+
+    if (!items.length) {
+      return null;
+    }
+
     const legend = document.createElement('div');
     legend.className = 'libcal-gantt-legend';
     legend.setAttribute('role', 'list');
     legend.setAttribute('aria-label', Drupal.t('What the colours mean'));
-
-    const items = [
-      { modifier: 'event', label: Drupal.t('Scheduled event') },
-      { modifier: 'all-day', label: Drupal.t('Ongoing / all day') },
-      { modifier: 'today', label: Drupal.t('Today') },
-    ];
-
-    if (!isHomepage) {
-      items.push({ modifier: 'multi', label: Drupal.t('Runs across several days') });
-      items.push({ modifier: 'weekend', label: Drupal.t('Weekend') });
-    }
-
-    if (calendarShowHours) {
-      items.push({ modifier: 'open', label: Drupal.t('Open right now') });
-      items.push({ modifier: 'closed', label: Drupal.t('Closed') });
-    }
 
     items.forEach((item) => {
       const entry = document.createElement('span');
@@ -1355,9 +1873,6 @@
       entry.setAttribute('role', 'listitem');
 
       const swatch = document.createElement('span');
-      // The swatch is the only place in the legend that carries meaning
-      // visually, and it is decorative to a screen reader - the adjacent
-      // text already says what it stands for.
       swatch.className = 'libcal-gantt-legend__swatch libcal-gantt-legend__swatch--' + item.modifier;
       swatch.setAttribute('aria-hidden', 'true');
       entry.appendChild(swatch);
@@ -1474,9 +1989,10 @@
    * different widths at once. `.libcal-gantt` itself is now just a
    * flex-column wrapper stacking each block.
    */
-  function buildGrid(days, rows, scale, calendarShowHours) {
+  function buildGrid(days, rows, scale, calendarShowHours, state) {
     const wrap = document.createElement('div');
     wrap.className = 'libcal-gantt';
+    wrap.id = state.instanceId + '-grid';
     wrap.setAttribute('role', 'table');
     wrap.setAttribute('aria-label', Drupal.t('Upcoming events'));
 
@@ -2244,6 +2760,7 @@
             startLabel: firstEvent.startLabel,
             endLabel: firstEvent.endLabel,
             url: chosenEvent.url,
+            ongoing: firstEvent.ongoing,
             days: runDays,
             dayIndices: runDays.map((day) => dayIndex.get(day)),
           });
@@ -2328,14 +2845,14 @@
     }
 
     const allDay = isAllDayLabel(run.startLabel, run.endLabel);
-    if (allDay) {
+    if (allDay || run.ongoing) {
       // Same all-day treatment a single-day bar gets - see buildBar().
       bar.classList.add('libcal-gantt__bar--all-day');
     }
     const dateRange = run.days.length > 1
       ? formatDayLabel(run.days[0], false) + ' – ' + formatDayLabel(run.days[run.days.length - 1], false)
       : formatDayLabel(run.days[0], false);
-    bar.title = (allDay ? Drupal.t('All day') : run.startLabel + '–' + run.endLabel)
+    bar.title = ((allDay || run.ongoing) ? Drupal.t('Ongoing') : run.startLabel + '–' + run.endLabel)
       + ' — ' + dateRange
       + (run.location ? ' — ' + run.location : '')
       + ' — ' + run.title
@@ -2351,7 +2868,7 @@
 
     const time = document.createElement('span');
     time.className = 'libcal-gantt__bar-time';
-    time.textContent = allDay ? Drupal.t('All day') : run.startLabel + '–' + run.endLabel;
+    time.textContent = (allDay || run.ongoing) ? Drupal.t('Ongoing') : run.startLabel + '–' + run.endLabel;
     bar.appendChild(time);
 
     if (run.location) {
@@ -2552,6 +3069,7 @@
 
     const wrap = document.createElement('div');
     wrap.className = 'libcal-gantt-agenda';
+    wrap.id = state.instanceId + '-agenda';
 
     const filter = buildAgendaRowFilter(container, endpoint, state);
     if (filter) {
@@ -2594,12 +3112,21 @@
       // desktop grid's day cells get, so one set of theme overrides
       // covers both views - see applyDayStateClasses().
       applyDayStateClasses(section, day);
+      if (day === today) {
+        section.setAttribute('aria-current', 'date');
+      }
 
       const title = document.createElement('div');
       title.className = 'libcal-gantt-agenda__day-title';
       title.setAttribute('role', 'heading');
       title.setAttribute('aria-level', '3');
       title.textContent = formatDayLabel(day, true);
+      if (day === today) {
+        const todayLabel = document.createElement('span');
+        todayLabel.className = 'libcal-gantt-agenda__today-label';
+        todayLabel.textContent = Drupal.t('Today');
+        title.appendChild(todayLabel);
+      }
       section.appendChild(title);
 
       // One line per configured row that actually has hours data for
@@ -2637,6 +3164,12 @@
       const entries = (eventsByDay.get(day) || []).sort((a, b) => a.segment.startHour - b.segment.startHour);
 
       if (!entries.length) {
+        const hasHours = calendarShowHours && visibleRowLabels.some((rowLabel) =>
+          hoursSummary(hoursByRow && hoursByRow[rowLabel] && hoursByRow[rowLabel][day])
+        );
+        if (!hasHours && day !== today) {
+          section.classList.add('is-empty');
+        }
         const empty = document.createElement('p');
         empty.className = 'libcal-gantt-agenda__empty';
         empty.textContent = Drupal.t('No events scheduled.');
@@ -2740,6 +3273,10 @@
     }
 
     renderChart(container, endpoint, state);
+    const status = container.querySelector('.libcal-gantt-chart__status');
+    if (status) {
+      status.textContent = Drupal.t('Showing more events.');
+    }
   }
 
   /**
@@ -2758,6 +3295,8 @@
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'libcal-gantt-chart__more-button';
+    button.setAttribute('aria-controls', state.instanceId + '-agenda');
+    button.setAttribute('aria-expanded', state.agendaVisibleDayCount < state.days.length ? 'true' : 'false');
     button.textContent = Drupal.t('Show @count more events', { '@count': MOBILE_EVENTS_PER_CLICK });
     button.addEventListener('click', () => {
       loadMoreMobileEvents(container, endpoint, state);
@@ -2876,7 +3415,7 @@
     const details = document.createElement('span');
     details.className = 'libcal-gantt-agenda__details';
 
-    const locationText = event.location || event.row || '';
+    const locationText = event.isOnline ? Drupal.t('Online') : (event.location || event.row || '');
     if (locationText) {
       const location = document.createElement('span');
       location.className = 'libcal-gantt-agenda__location';
@@ -2945,6 +3484,10 @@
         // whatever day count happened to satisfy the old one.
         state.agendaVisibleDayCount = null;
         renderChart(container, endpoint, state);
+        const status = container.querySelector('.libcal-gantt-chart__status');
+        if (status) {
+          status.textContent = Drupal.t('Showing events for @building.', { '@building': option.label });
+        }
       });
 
       wrap.appendChild(tab);
@@ -2967,7 +3510,7 @@
 
     const time = document.createElement('span');
     time.className = 'libcal-gantt-agenda__time';
-    time.textContent = isAllDayLabel(event.startLabel, event.endLabel) ? Drupal.t('All day') : event.startLabel + '–' + event.endLabel;
+    time.textContent = (isAllDayLabel(event.startLabel, event.endLabel) || event.ongoing) ? Drupal.t('Ongoing') : event.startLabel + '–' + event.endLabel;
     link.appendChild(time);
 
     const details = document.createElement('span');
@@ -2979,7 +3522,7 @@
     // typically blank since a physical room doesn't apply to them.
     // Shown before the title, same order as the desktop bar (see
     // buildBar()).
-    const locationText = event.location || event.row || '';
+    const locationText = event.isOnline ? Drupal.t('Online') : (event.location || event.row || '');
     if (locationText) {
       const location = document.createElement('span');
       location.className = 'libcal-gantt-agenda__location';
@@ -3011,6 +3554,8 @@
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'libcal-gantt-chart__more-button';
+    button.setAttribute('aria-controls', state.instanceId + '-grid');
+    button.setAttribute('aria-expanded', state.days.length > (state.pageSize || 10) ? 'true' : 'false');
     const increment = state.pageSize || 10;
     button.textContent = Drupal.t('Show @count more weekdays', { '@count': increment });
     button.addEventListener('click', () => {
@@ -3072,6 +3617,59 @@
    * Events that didn't match any configured row were already excluded
    * server-side, so there's no catch-all bucket to build here.
    */
+  /** Returns display-mode events merged by actual week, building, location, and title. */
+  function getRenderableEvents(state) {
+    if (!isLibraryDisplaysCalendar(state)) {
+      return state.events;
+    }
+    const merged = new Map();
+    state.events.forEach((event) => {
+      const days = Object.keys(event.segments || {});
+      days.forEach((day) => {
+        const date = new Date(day + 'T12:00:00');
+        const monday = new Date(date);
+        const weekday = (date.getDay() + 6) % 7;
+        monday.setDate(date.getDate() - weekday);
+        const week = monday.toISOString().slice(0, 10);
+        // Library Displays are a single weekly/location display, even when
+        // LibCal supplies separate occurrences or titles for that same
+        // place and week. Normal Events keep their original event objects.
+        const key = [week, event.row, event.location || ''].join('\u0000');
+        if (!merged.has(key)) {
+          merged.set(key, Object.assign({}, event, { segments: {}, ongoing: false }));
+        }
+        const target = merged.get(key);
+        target.segments[day] = event.segments[day];
+        if (event.title && event.title !== target.title) {
+          const titles = target.title.split(' · ');
+          if (!titles.includes(event.title)) {
+            target.title += ' · ' + event.title;
+          }
+        }
+        if (event.url && !target.url) target.url = event.url;
+        if (event.image && !target.image) target.image = event.image;
+      });
+    });
+    const today = todayDateKey();
+    merged.forEach((event) => {
+      const days = Object.keys(event.segments).sort();
+      // Hill Memorial displays are explicitly ongoing across their merged span.
+      event.ongoing = /hill\s+memorial/i.test(event.row + ' ' + (event.location || ''))
+        && days.length > 1
+        && today >= days[0] && today <= days[days.length - 1];
+    });
+    return Array.from(merged.values());
+  }
+
+  function isLibraryDisplaysCalendar(state) {
+    const active = (state.calendars || []).find((calendar) => String(calendar.id) === String(state.calendarId));
+    // The response normally supplies the tab key separately, but accepting
+    // the label as a fallback keeps the homepage merge active during the
+    // first render and with older endpoint responses that omit `calendar`.
+    return !!((active && /library\s+displays/i.test(active.label || ''))
+      || /library\s+displays/i.test(String(state.calendarId || '')));
+  }
+
   function buildRows(rowLabels, events) {
     return rowLabels.map((label) => ({
       label,
@@ -3118,10 +3716,11 @@
     // by exact room, the specific room/location (e.g. "[Main Library]
     // Room 109") is the more useful line to read first, same order the
     // mobile agenda uses (see buildAgendaItem()).
-    if (event.location) {
+    const locationText = event.isOnline ? Drupal.t('Online') : event.location;
+    if (locationText) {
       const location = document.createElement('span');
-      location.className = 'libcal-gantt__bar-location';
-      location.textContent = event.location;
+      location.className = 'libcal-gantt__bar-location' + (event.isOnline ? ' libcal-gantt__bar-location--online' : '');
+      location.textContent = locationText;
       bar.appendChild(location);
     }
 
@@ -3166,6 +3765,16 @@
     return message;
   }
 
+  function buildLiveRegion(state) {
+    const region = document.createElement('div');
+    region.className = 'libcal-gantt-chart__status';
+    region.id = state.instanceId + '-status';
+    region.setAttribute('role', 'status');
+    region.setAttribute('aria-live', 'polite');
+    region.setAttribute('aria-atomic', 'true');
+    return region;
+  }
+
   function errorMessage() {
     const message = document.createElement('p');
     message.className = 'libcal-gantt-chart__error';
@@ -3194,17 +3803,20 @@
     if (entry.closed) {
       return Drupal.t('Closed');
     }
-    if (entry.label) {
-      return entry.label;
-    }
     if (typeof entry.openHour === 'number' && typeof entry.closeHour === 'number') {
       return formatHourFraction(entry.openHour) + ' – ' + formatHourFraction(entry.closeHour);
+    }
+    if (entry.label) {
+      return entry.label;
     }
     return null;
   }
 
   function formatHourFraction(hour) {
     const totalMinutes = Math.round(hour * 60);
+    if (totalMinutes % 1440 === 0) {
+      return Drupal.t('midnight');
+    }
     const h24 = Math.floor(totalMinutes / 60) % 24;
     const minutes = totalMinutes % 60;
     const period = h24 >= 12 ? 'PM' : 'AM';
@@ -3230,6 +3842,27 @@
     const m = String(now.getMonth() + 1).padStart(2, '0');
     const d = String(now.getDate()).padStart(2, '0');
     return y + '-' + m + '-' + d;
+  }
+
+  /**
+   * Tomorrow's date key, for the homepage variant's "Tomorrow" badge.
+   *
+   * Derived from todayDateKey() rather than from a second `new Date()`, so
+   * the two can never disagree across a midnight tick, and stepped in UTC
+   * on purpose: setDate() on a local date crossing a DST boundary can land
+   * on the same calendar day again or skip one, and this only ever needs
+   * the next calendar square, not a duration.
+   *
+   * @return {string}
+   *   Tomorrow as a Y-m-d key, or '' if today's key could not be parsed.
+   */
+  function tomorrowDateKey() {
+    const date = new Date(todayDateKey() + 'T00:00:00Z');
+    if (Number.isNaN(date.getTime())) {
+      return '';
+    }
+    date.setUTCDate(date.getUTCDate() + 1);
+    return date.toISOString().slice(0, 10);
   }
 
   /**
@@ -3451,9 +4084,16 @@
     const endClock = end[1] + (end[2] === '00' ? '' : ':' + end[2]);
     const startMeridiem = start[3].toUpperCase() + 'M';
     const endMeridiem = end[3].toUpperCase() + 'M';
+    const startText = start[1] === '12' && start[2] === '00' && start[3].toUpperCase() === 'A'
+      ? Drupal.t('midnight')
+      : startClock + ' ' + startMeridiem;
+    const endText = end[1] === '12' && end[2] === '00' && end[3].toUpperCase() === 'A'
+      ? Drupal.t('midnight')
+      : endClock + ' ' + endMeridiem;
 
-    return (startMeridiem === endMeridiem ? startClock : startClock + ' ' + startMeridiem)
-      + '–' + endClock + ' ' + endMeridiem;
+    return startMeridiem === endMeridiem && startText !== Drupal.t('midnight')
+      ? startClock + '–' + endText
+      : startText + '–' + endText;
   }
 
   /**
@@ -3475,8 +4115,11 @@
     if (!parts) {
       return String(label || '');
     }
+    if (parts[1] === '12' && parts[2] === '00' && parts[3].toUpperCase() === 'A') {
+      return Drupal.t('midnight');
+    }
     return parts[1]
-      + (parts[2] === '00' ? '' : ':' + parts[2])
+      + ':' + parts[2]
       + ' ' + parts[3].toUpperCase() + 'M';
   }
 

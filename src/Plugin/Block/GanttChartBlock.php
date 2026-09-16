@@ -24,9 +24,9 @@ use Drupal\Core\Url;
  *
  *   - Full grid: the original wide weekday grid, with the mobile agenda
  *     fallback on narrow screens. Intended for a dedicated events page.
- *   - Homepage teaser: a compact grid of day cards showing the next few
- *     days only, with a "Full calendar" link and its own "Show more days"
- *     control. Intended for the LSU Libraries homepage, where the wide
+ *   - Homepage teaser: a compact row of day cards showing the next few
+ *     days only, with a "Full calendar" link and a "Show more" control
+ *     beside it. Intended for the LSU Libraries homepage, where the wide
  *     grid does not fit the surrounding three-column layout.
  *
  * The settings below are DISPLAY concerns and therefore live on the block
@@ -106,7 +106,7 @@ class GanttChartBlock extends BlockBase {
       '#default_value' => $config['homepage_days'],
       '#min' => 1,
       '#max' => 14,
-      '#description' => $this->t('How many days are visible before "Show more days" is used. Each click reveals this many more, growing the block downward in place. Weekend days are grouped into a single strip and do not count toward this number.'),
+      '#description' => $this->t('How many days are visible before "Show more" is used. Each click then reveals the rest of that week plus the following one, so the cards always fill complete rows. Weekend days are grouped into a single strip and do not count toward this number.'),
     ];
 
     $form['homepage']['full_calendar_url'] = [

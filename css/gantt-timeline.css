@@ -108,11 +108,24 @@
      solid fill so a bar sitting in today's column is still the most
      prominent thing in it. */
   --libcal-gantt-today-accent: #fdd023;
+  --libcal-gantt-today-date-color: #fdd023;
   --libcal-gantt-today-header-bg: #3a2d52;
   --libcal-gantt-today-header-color: #ffffff;
   --libcal-gantt-today-cell-bg: #241d33;
   --libcal-gantt-today-edge: rgba(253, 208, 35, 0.45);
   --libcal-gantt-today-badge-color: #2a1c0a;
+
+  /* Hover timing. Asymmetric on purpose: a hover response has to feel
+     immediate to read as a response at all, so entering is quick, while
+     leaving is unhurried - a slow fade out stops a pointer crossing a row
+     of cards or tabs from setting off a rapid flicker of things snapping
+     back, and it keeps the trail of where the pointer has just been
+     legible for a moment. Both directions ease-in.
+
+     Not theme-dependent, but declared here with the other tokens so every
+     transition in the file reads its timing from one place. */
+  --libcal-gantt-hover-in: 0.2s;
+  --libcal-gantt-hover-out: 0.5s;
 
   /* Status colours - the now_open/now_closed dots and the error note. */
   --libcal-gantt-open-color: #4ac97e;
@@ -263,6 +276,7 @@
      that clears 3:1, while the header band and badge stay true gold with
      near-black text over them. */
   --libcal-gantt-today-accent: #8a6508;
+  --libcal-gantt-today-date-color: #8a6508;
   --libcal-gantt-today-header-bg: #fdd023;
   --libcal-gantt-today-header-color: #2a1c0a;
   --libcal-gantt-today-cell-bg: #fffbec;
@@ -331,6 +345,18 @@
 .libcal-gantt-chart *::before,
 .libcal-gantt-chart *::after {
   box-sizing: border-box;
+}
+
+.libcal-gantt-chart__status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .libcal-gantt-chart__loading,
@@ -403,7 +429,7 @@
 .libcal-gantt-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0;
   margin-bottom: 1rem;
   position: sticky;
   left: 0;
@@ -415,15 +441,31 @@
   font-weight: 600;
   padding: 0.5rem 1.1rem;
   border: 1px solid var(--libcal-gantt-border);
-  border-radius: 999px;
+  border-radius: 0;
   background: var(--libcal-gantt-header-bg);
   color: var(--libcal-gantt-header-color);
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition: background var(--libcal-gantt-hover-out) ease-in,
+    color var(--libcal-gantt-hover-out) ease-in,
+    border-color var(--libcal-gantt-hover-out) ease-in;
+}
+
+.libcal-gantt-tabs__tab + .libcal-gantt-tabs__tab,
+.libcal-gantt-agenda-filter__tab + .libcal-gantt-agenda-filter__tab {
+  border-left-width: 0;
+}
+
+.libcal-gantt-tabs__tab:focus-visible,
+.libcal-gantt-agenda-filter__tab:focus-visible {
+  outline: 2px solid var(--libcal-gantt-today-accent);
+  outline-offset: 2px;
+  position: relative;
+  z-index: 1;
 }
 
 .libcal-gantt-tabs__tab:hover:not(.is-active) {
+  transition-duration: var(--libcal-gantt-hover-in);
   border-color: var(--libcal-gantt-bar-bg);
 }
 
@@ -474,11 +516,14 @@
   font-size: 0.78em;
   line-height: 1.2;
   cursor: pointer;
+  transition: border-color var(--libcal-gantt-hover-out) ease-in,
+    color var(--libcal-gantt-hover-out) ease-in;
 }
 
 .libcal-gantt-theme-toggle:hover {
   border-color: var(--libcal-gantt-today-accent);
   color: var(--libcal-gantt-text);
+  transition-duration: var(--libcal-gantt-hover-in);
 }
 
 .libcal-gantt-theme-toggle__icon {
@@ -721,11 +766,12 @@
   background: var(--libcal-gantt-bar-bg);
   color: var(--libcal-gantt-bar-color);
   text-decoration: none;
-  transition: filter 0.15s ease;
+  transition: filter var(--libcal-gantt-hover-out) ease-in;
 }
 
 a.libcal-gantt__weekend-event:hover,
 a.libcal-gantt__weekend-event:focus {
+  transition-duration: var(--libcal-gantt-hover-in);
   filter: brightness(1.1);
   outline: 2px solid var(--libcal-gantt-bar-bg);
   outline-offset: 1px;
@@ -786,11 +832,12 @@ a.libcal-gantt__weekend-event:focus {
   padding: 0.35rem 0.5rem;
   text-decoration: none;
   box-shadow: 0 1px 2px var(--libcal-gantt-shadow);
-  transition: filter 0.15s ease;
+  transition: filter var(--libcal-gantt-hover-out) ease-in;
 }
 
 .libcal-gantt__bar:hover,
 .libcal-gantt__bar:focus {
+  transition-duration: var(--libcal-gantt-hover-in);
   filter: brightness(1.1);
   outline: 2px solid var(--libcal-gantt-bar-bg);
   outline-offset: 1px;
@@ -1005,12 +1052,13 @@ a.libcal-gantt__weekend-event:focus {
 .libcal-gantt__day-header.today_date {
   background: var(--libcal-gantt-today-header-bg);
   color: var(--libcal-gantt-today-header-color);
-  /* Inset rather than a real border so the header cell keeps the exact
-     same box as its neighbours and the columns stay aligned. */
-  box-shadow: inset 0 3px 0 var(--libcal-gantt-today-accent);
+  /* Today is identified by the explicit label and date text; avoid a
+     top rule that becomes awkward when the header wraps on mobile. */
+  box-shadow: none;
 }
 
 .libcal-gantt__day-header.today_date .libcal-gantt__day-header-date {
+  color: var(--libcal-gantt-today-date-color);
   font-weight: 700;
 }
 
@@ -1075,7 +1123,17 @@ a.libcal-gantt__weekend-event:focus {
 }
 
 .libcal-gantt-agenda__day.today_date .libcal-gantt-agenda__day-title {
-  color: var(--libcal-gantt-today-accent);
+  color: var(--libcal-gantt-today-date-color);
+}
+
+.libcal-gantt-agenda__today-label {
+  display: inline-block;
+  margin-left: 0.5rem;
+  color: var(--libcal-gantt-today-date-color);
+  font-size: 0.72em;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 /* ---- Open / closed right now ---- */
@@ -1096,8 +1154,15 @@ a.libcal-gantt__weekend-event:focus {
   background: var(--libcal-gantt-open-color);
 }
 
+/* Closed is HOLLOW, open is filled - a difference in shape, not only in
+   hue. Red and green are the pair a red-green colour deficiency collapses
+   (the most common form, and roughly one man in twelve), so a dot that
+   differed by colour alone carried no information at all for those
+   readers. Filled-versus-ring survives that, greyscale printing, and a
+   theme override of either colour token. */
 .now_closed::after {
-  background: var(--libcal-gantt-closed-color);
+  background: none;
+  border: 0.15em solid var(--libcal-gantt-closed-color);
 }
 
 /* =========================================================================
@@ -1141,7 +1206,7 @@ a.libcal-gantt__weekend-event:focus {
 .libcal-gantt-agenda-filter {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0;
   margin-bottom: 1rem;
 }
 
@@ -1151,15 +1216,18 @@ a.libcal-gantt__weekend-event:focus {
   font-weight: 600;
   padding: 0.4rem 0.9rem;
   border: 1px solid var(--libcal-gantt-border);
-  border-radius: 999px;
+  border-radius: 0;
   background: var(--libcal-gantt-header-bg);
   color: var(--libcal-gantt-header-color);
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition: background var(--libcal-gantt-hover-out) ease-in,
+    color var(--libcal-gantt-hover-out) ease-in,
+    border-color var(--libcal-gantt-hover-out) ease-in;
 }
 
 .libcal-gantt-agenda-filter__tab:hover:not(.is-active) {
+  transition-duration: var(--libcal-gantt-hover-in);
   border-color: var(--libcal-gantt-bar-bg);
 }
 
@@ -1206,11 +1274,13 @@ a.libcal-gantt__weekend-event:focus {
   border-radius: 4px;
   text-decoration: none;
   color: inherit;
+  transition: background var(--libcal-gantt-hover-out) ease-in;
 }
 
 a.libcal-gantt-agenda__link:hover,
 a.libcal-gantt-agenda__link:focus {
   background: var(--libcal-gantt-header-bg);
+  transition-duration: var(--libcal-gantt-hover-in);
 }
 
 .libcal-gantt-agenda__time {
@@ -1310,11 +1380,13 @@ a.libcal-gantt-agenda__link:focus {
   background: var(--libcal-gantt-button-bg);
   color: var(--libcal-gantt-bar-color);
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background var(--libcal-gantt-hover-out) ease-in,
+    color var(--libcal-gantt-hover-out) ease-in;
 }
 
 .libcal-gantt-chart__more-button:hover:not(:disabled),
 .libcal-gantt-chart__more-button:focus:not(:disabled) {
+  transition-duration: var(--libcal-gantt-hover-in);
   background: var(--libcal-gantt-bar-bg);
   color: var(--libcal-gantt-button-active-color);
 }
@@ -1330,18 +1402,84 @@ a.libcal-gantt-agenda__link:focus {
   font-size: 0.8125rem;
 }
 
-/* The homepage variant's own control. Visually SEPARATED from the cards -
-   its own rule above it and real breathing room - because it does
-   something structurally different from the CTA beside the heading: this
-   grows the block downward in place, the CTA leaves for the full calendar.
-   Centred and full-width so it reads as an action on the whole block
-   rather than on the last card. */
-.libcal-gantt-chart__more--homepage {
+/* The homepage reveal control belongs in the full-width strip below the
+   bands, where the content ends. Its wrapper stays centered so the control
+   does not read as a right-hand header action. */
+.libcal-gantt-chart__more--homepage,
+.libcal-gantt-home__more--less {
   display: flex;
-  justify-content: center;
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--libcal-gantt-border-subtle);
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.libcal-gantt-home__more .libcal-gantt-chart__more-error {
+  margin: 0;
+  max-width: 22ch;
+  color: var(--libcal-gantt-text-muted);
+  font-size: 0.72em;
+  text-align: center;
+}
+
+/* Same pill geometry as the "Full calendar" CTA it sits beside - matched
+   deliberately, since the two are peers in the same bar - but neutral
+   where the CTA is gold. Gold is the block's one accent and it is already
+   spoken for by today and the CTA; a second gold pill would make the
+   header read as two equally important actions, and "show me a bit more"
+   is not equal to "go to the calendar". */
+.libcal-gantt-home__more-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  cursor: pointer;
+  padding: 5px 13px;
+  border: 1px solid var(--libcal-gantt-border);
+  border-radius: 999px;
+  background: none;
+  color: var(--libcal-gantt-text-muted);
+  font-size: 0.78em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-transform: uppercase;
+  white-space: normal;
+  transition: border-color var(--libcal-gantt-hover-out) ease-in,
+    color var(--libcal-gantt-hover-out) ease-in;
+}
+.libcal-gantt-home__more-button:hover:not(:disabled),
+.libcal-gantt-home__more-button:focus-visible {
+  transition-duration: var(--libcal-gantt-hover-in);
+  border-color: var(--libcal-gantt-text-muted);
+  color: var(--libcal-gantt-text);
+  background: none;
+}
+.libcal-gantt-home__more-button:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+/* Points down, at the cards it adds, and nudges the same 2px the CTA's
+   arrow nudges sideways - one gesture, two directions, so the pair reads
+   as "more here" next to "away to there". */
+.libcal-gantt-home__more-arrow {
+  line-height: 1;
+  transition: transform var(--libcal-gantt-hover-out) ease-in;
+}
+.libcal-gantt-home__more-button:hover .libcal-gantt-home__more-arrow,
+.libcal-gantt-home__more-button:focus-visible .libcal-gantt-home__more-arrow {
+  transition-duration: var(--libcal-gantt-hover-in);
+  transform: translateY(2px);
+}
+
+/* "Show less" nudges the other way, toward what it does - the two buttons
+   are otherwise identical, and this is the only moving part that tells
+   them apart before the label is read. */
+.libcal-gantt-home__more-button--less:hover .libcal-gantt-home__more-arrow,
+.libcal-gantt-home__more-button--less:focus-visible .libcal-gantt-home__more-arrow {
+  transform: translateY(-2px);
 }
 
 /* =========================================================================
@@ -1427,7 +1565,8 @@ a.libcal-gantt-agenda__link:focus {
   gap: 8px 12px;
 }
 
-.libcal-gantt-home__controls .libcal-gantt-tabs {
+.libcal-gantt-home__headings .libcal-gantt-tabs {
+  margin-top: 8px;
   margin-bottom: 0;
 }
 
@@ -1468,35 +1607,121 @@ a.libcal-gantt-agenda__link:focus {
 }
 
 .libcal-gantt-home__cta-arrow {
-  transition: transform 0.15s ease;
+  transition: transform var(--libcal-gantt-hover-out) ease-in;
 }
 
 .libcal-gantt-home__cta:hover .libcal-gantt-home__cta-arrow {
+  transition-duration: var(--libcal-gantt-hover-in);
   transform: translateX(2px);
+}
+
+/* ---- Week bands ---- */
+
+/* The revealed days are a STACK of week bands: a card grid, a weekend
+   strip, the next week's card grid. The 1px gaps continue the same
+   hairline system the card grid uses internally, so the seam between a
+   band and the strip below it is the same weight as the seam between two
+   cards - the stack reads as one ruled table, not as separate panels.
+
+   Bands exist because the strip cannot be a member of the grid it follows:
+   spanning `1 / -1` it forces the cards onto multiple rows, and the
+   leftover tracks on the short row then paint as gaps in the divider
+   colour instead of collapsing the way `auto-fit` collapses genuinely
+   empty ones. One grid per band, one row per grid, no leftover tracks. */
+.libcal-gantt-home__bands {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--libcal-gantt-border-subtle);
+}
+
+.libcal-gantt-home__week-heading {
+  margin: 0;
+  padding: 0.45rem 0.75rem;
+  background: var(--libcal-gantt-header-bg);
+  color: var(--libcal-gantt-text-muted);
+  font-size: 0.72em;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.libcal-gantt-home__reveal {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.65rem 1rem;
+  border-top: 1px solid var(--libcal-gantt-border);
+  background: var(--libcal-gantt-header-bg);
 }
 
 /* ---- Day card grid ---- */
 
 .libcal-gantt-home__days {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), minmax(0, 1fr)));
+  /* TRACK COUNT COMES FROM THE JS, which sets
+     `--libcal-gantt-band-tracks` on the band container: the number of
+     cards while the block is the collapsed teaser, five - one per weekday
+     - once it has been expanded. The `5` here is only the fallback for a
+     band rendered without the property.
 
-  /* Columns divided by a hairline, not floated apart as separate cards.
-     The 1px gap IS the divider: this element's background shows through
-     it and each column paints its own background over everything else.
-     Done this way rather than with `border-left` because it also draws
-     the rule between STACKED columns once the grid collapses to one
-     track on a narrow container - no extra breakpoint, and no stray
-     border to strip off the first column. */
-  gap: 1px;
-  background: var(--libcal-gantt-border-subtle);
+     Why the two modes. Expanded, a band is almost never a full week: the
+     first starts at today (four cards on a Tuesday) and the last stops
+     wherever the server window ends (three cards). Sized to their
+     contents, those bands came out at three different card widths stacked
+     on each other, and because each card decides whether to spell its
+     weekday out from ITS OWN width, the block showed "TUESDAY, SEP 15" in
+     one row and "TUE, SEP 22" in the next. Fixing the tracks to five
+     makes every card the same width, so every card resolves that question
+     the same way and the rows line up.
+
+     Collapsed, that same rule is wrong: three cards in five tracks leave
+     two tracks empty and the teaser reads as a half-empty shelf. Three
+     cards in three tracks fill the width, which is the compact
+     at-a-glance strip the top of the homepage is paying for.
+
+     The leftover tracks an expanded short band does have show blank
+     surface rather than dark holes, because the dividers below are drawn
+     as card borders and this element's background is the card colour -
+     not the divider colour a coloured backdrop would have shown through
+     the gaps. */
+  display: grid;
+  grid-template-columns: repeat(var(--libcal-gantt-band-tracks, 5), minmax(0, 1fr));
+  background: var(--libcal-gantt-block-bg);
 }
 
-/* `auto-fit` with a nested minmax() is not universally supported; the
-   simpler two-value form below is what most engines will use. Declared
-   second so it wins wherever both parse. */
-.libcal-gantt-home__days {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+/* Library Displays use the same card grid, but their weekly/location
+   records are real grid items: one item occupies the covered weekday
+   columns instead of being copied into each card. Cards stay in row one;
+   explicit span lanes below them keep multiple locations readable. */
+.libcal-gantt-home__days--display-spans {
+  grid-template-rows: auto repeat(var(--libcal-gantt-display-lanes, 1), auto);
+  align-items: start;
+}
+
+.libcal-gantt-home__days--display-spans > .libcal-gantt-home__day {
+  grid-row: 1;
+}
+
+.libcal-gantt-home__item--span {
+  min-width: 0;
+  margin: 0.375rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--libcal-gantt-border-subtle);
+  border-left: 3px solid var(--libcal-gantt-today-accent);
+  background: var(--libcal-gantt-block-bg);
+}
+
+.libcal-gantt-home__item--span + .libcal-gantt-home__item--span {
+  border-top: 1px solid var(--libcal-gantt-border-subtle);
+}
+
+
+/* The hairline between cards, drawn by the card that follows it. Not a
+   1px grid gap over a coloured background: that colours EVERY gap,
+   including the ones bordering tracks no card occupies. A border only
+   exists where a card does. */
+.libcal-gantt-home__day + .libcal-gantt-home__day {
+  border-left: 1px solid var(--libcal-gantt-border-subtle);
 }
 
 .libcal-gantt-home__day {
@@ -1504,6 +1729,7 @@ a.libcal-gantt-agenda__link:focus {
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+
 
   /* No border and no radius. Grid items stretch to the tallest row, so a
      bordered box around every column turns that stretch into a large
@@ -1515,10 +1741,9 @@ a.libcal-gantt-agenda__link:focus {
 
   /* Its own container, so the date in the head can respond to how wide
      THIS CARD ended up rather than to the viewport. The two are only
-     loosely related: the grid fits as many 220px-minimum columns as the
-     block's slot allows, so a 900px slot gives four cramped cards while a
-     500px slot gives two roomy ones and a phone gives one full-width
-     card. A viewport breakpoint would abbreviate the date on the phone -
+     loosely related: a card is a fifth of whatever slot the block sits in,
+     so a 1900px slot gives roomy cards and a 900px slot gives cramped
+     ones, while a phone stacks them full-width. A viewport breakpoint would abbreviate the date on the phone -
      where there is the most room for it - and leave it wrapping in the
      four-column case. */
   container-type: inline-size;
@@ -1592,18 +1817,38 @@ a.libcal-gantt-agenda__link:focus {
   text-transform: uppercase;
 }
 
+/* Tomorrow: the same pill, one step down in voice. Outlined and muted
+   rather than filled gold, because two gold pills in a row of cards read
+   as two equally urgent days and today stops being the one place the eye
+   lands first. Borrows the outlined vocabulary the venue tags already use,
+   so a quiet badge is a familiar shape here rather than a new one.
+
+   `background: none` is explicit rather than inherited: the base rule
+   above sets a gold fill, and a modifier that only changed the text colour
+   would leave gold ink on gold. */
+.libcal-gantt-home__today-badge--tomorrow {
+  border: 1px solid var(--libcal-gantt-border);
+  background: none;
+  color: var(--libcal-gantt-text-muted);
+  /* Compensates for the 1px border this one has and the filled badge does
+     not, so the two sit at the same height when they are side by side in
+     adjacent cards. */
+  padding: 1px 7px;
+}
+
 /* The today card is tinted and gets a gold top edge, the same two signals
    the grid's today column uses (section 11) reading from the same tokens -
    one highlight mechanism across both variants, not two. */
 .libcal-gantt-home__day.today_date {
-  /* The gold inset rule along the top edge is the whole highlight now.
-     `border-color` went with the border above; a full gold outline round
-     one column fought the panel's own border for attention. */
   background: var(--libcal-gantt-today-cell-bg);
-  box-shadow: inset 0 3px 0 var(--libcal-gantt-today-accent);
+  box-shadow: none;
 }
 
-/* A past day can only appear here after "Show more days" has been clicked
+.libcal-gantt-home__day.today_date .libcal-gantt-home__day-name {
+  color: var(--libcal-gantt-today-date-color);
+}
+
+/* A past day can only appear here after "Show more" has been clicked
    enough times to walk backwards past it, which the current server window
    does not do - kept for parity with the grid's state classes so a future
    change to the day window does not need a new rule. */
@@ -1648,11 +1893,13 @@ a.libcal-gantt-agenda__link:focus {
   background: none;
   color: var(--libcal-gantt-text);
   text-decoration: none;
+  transition: background var(--libcal-gantt-hover-out) ease-in;
 }
 
 a.libcal-gantt-home__link:hover,
 a.libcal-gantt-home__link:focus {
   background: var(--libcal-gantt-header-bg);
+  transition-duration: var(--libcal-gantt-hover-in);
 }
 
 /* Underline the title on hover instead of repainting the whole row. With
@@ -1707,8 +1954,8 @@ a.libcal-gantt-home__link:focus .libcal-gantt-home__item-title {
      overflow one. Clamped so no single event can set the card's height. */
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
   overflow: hidden;
   overflow-wrap: anywhere;
   font-size: 0.86em;
@@ -1722,8 +1969,9 @@ a.libcal-gantt-home__link:focus .libcal-gantt-home__item-title {
    card is built on. */
 .libcal-gantt-home__item-location {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 6px;
+  gap: 4px 6px;
   min-width: 0;
   margin-top: 3px;
   color: var(--libcal-gantt-text-muted);
@@ -1740,7 +1988,7 @@ a.libcal-gantt-home__link:focus .libcal-gantt-home__item-title {
    truncates itself rather than overflowing when there is genuinely no
    room. Colour comes from the data-venue rules below. */
 .libcal-gantt-home__venue {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   overflow: hidden;
   padding: 1px 6px;
   border: 1px solid var(--libcal-gantt-venue-other-edge);
@@ -1777,10 +2025,25 @@ a.libcal-gantt-home__link:focus .libcal-gantt-home__item-title {
    the muted subtitle the whole location line used to be, and it is the
    part that gives way first when the card is narrow. */
 .libcal-gantt-home__room {
+  flex: 1 1 100%;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.libcal-gantt-home__overflow {
+  display: inline-block;
+  margin-top: 0.35rem;
+  color: var(--libcal-gantt-today-date-color);
+  font-size: 0.76em;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.libcal-gantt-home__overflow:hover,
+.libcal-gantt-home__overflow:focus {
+  text-decoration: underline;
 }
 
 .libcal-gantt-home__empty {
@@ -1791,14 +2054,19 @@ a.libcal-gantt-home__link:focus .libcal-gantt-home__item-title {
 }
 
 .libcal-gantt-home__day-hours {
-  /* Directly under "Nothing scheduled", not pushed to the floor of the
-     column by `margin-top: auto`. Pinned to the bottom it drew a line
-     under the full height of the tallest column and turned the stretch
-     into a labelled void. */
-  margin: 0;
-  padding-top: 2px;
+  /* A card is stretched to its row's tallest member. Auto top spacing uses
+     that extra height to pin this status band to the bottom of every card,
+     while the negative margins let its background bleed to the card edges. */
+  flex: 0 0 auto;
+  width: calc(100% + 28px);
+  margin: auto -14px -12px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--libcal-gantt-border);
+  background: var(--libcal-gantt-header-bg);
   color: var(--libcal-gantt-text-subtle);
   font-size: 0.72em;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
 /* ---- Weekend strip ---- */
@@ -1808,10 +2076,11 @@ a.libcal-gantt-home__link:focus .libcal-gantt-home__item-title {
   flex-wrap: wrap;
   align-items: baseline;
   gap: 4px 12px;
-  /* Spans the whole card row rather than taking one of the three card
-     slots - a quiet weekend is worth one line, not a third of the
-     visitor's attention. */
-  grid-column: 1 / -1;
+  /* One full-width line rather than one of the card slots - a quiet
+     weekend is worth a line, not a third of the visitor's attention. It
+     gets that width by being a band in the stack above rather than by
+     spanning grid columns; the `grid-column: 1 / -1` this used to carry is
+     gone because it is no longer a grid child at all. */
   padding: 8px 12px;
   border: 1px dashed var(--libcal-gantt-border);
   border-radius: 6px;
@@ -1858,17 +2127,24 @@ a.libcal-gantt-home__weekend-event:focus {
 
 /* ---- Live open/closed footer ---- */
 
-.libcal-gantt-home__status {
+.libcal-gantt-home__footer,
+.libcal-gantt-chart__footer {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 16px;
-
-  /* The second band: own background, full-bleed rule above it, padding
-     matching the header's so the two strips frame the columns. */
   padding: 9px 16px;
   border-top: 1px solid var(--libcal-gantt-border);
   background: var(--libcal-gantt-header-bg);
+}
+
+.libcal-gantt-home__status {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  min-width: 0;
 }
 
 .libcal-gantt-home__status-pill {
@@ -1903,8 +2179,12 @@ a.libcal-gantt-home__weekend-event:focus {
   background: var(--libcal-gantt-open-color);
 }
 
+/* Hollow, for the same reason as the grid's dots above: closed differs
+   from open in shape as well as colour. `background: none` is explicit
+   because the base rule fills from `currentColor`. */
 .libcal-gantt-home__status-pill.now_closed .libcal-gantt-home__status-dot {
-  background: var(--libcal-gantt-closed-color);
+  background: none;
+  border: 2px solid var(--libcal-gantt-closed-color);
 }
 
 /* =========================================================================
@@ -1932,6 +2212,16 @@ a.libcal-gantt-home__weekend-event:focus {
   border-radius: 6px;
   color: var(--libcal-gantt-text-muted);
   font-size: 0.76em;
+}
+
+.libcal-gantt-home__footer > .libcal-gantt-legend,
+.libcal-gantt-chart__footer > .libcal-gantt-legend {
+  flex: 1 1 18rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
 }
 
 .libcal-gantt-legend__item {
@@ -1986,20 +2276,26 @@ a.libcal-gantt-home__weekend-event:focus {
   border-style: dashed;
 }
 
+/* Shared geometry only. `border: 0` moved down to the open swatch, which
+   is the one that wants no border - the closed swatch IS a border. */
 .libcal-gantt-legend__swatch--open,
 .libcal-gantt-legend__swatch--closed {
   width: 10px;
   height: 10px;
-  border: 0;
   border-radius: 50%;
 }
 
+
 .libcal-gantt-legend__swatch--open {
+  border: 0;
   background: var(--libcal-gantt-open-color);
 }
 
+/* The legend has to teach the distinction, so it draws the ring exactly as
+   the live dots do rather than approximating it with a flat colour chip. */
 .libcal-gantt-legend__swatch--closed {
-  background: var(--libcal-gantt-closed-color);
+  background: none;
+  border: 2px solid var(--libcal-gantt-closed-color);
 }
 
 /* =========================================================================
@@ -2021,7 +2317,18 @@ a.libcal-gantt-home__weekend-event:focus {
   }
 
   .libcal-gantt-agenda {
-    display: block;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 1rem;
+  }
+
+  .libcal-gantt-agenda-filter,
+  .libcal-gantt-agenda__weekend {
+    grid-column: 1 / -1;
+  }
+
+  .libcal-gantt-agenda__day.is-empty:not(.today_date) {
+    display: none;
   }
 
   .libcal-gantt-chart__more--desktop {
@@ -2043,13 +2350,29 @@ a.libcal-gantt-home__weekend-event:focus {
   }
 }
 
+/* Zeroing the two timing tokens rather than listing every element that
+   reads them: the list was already drifting behind the transitions that
+   were being added, and one declaration cannot drift. `transition: none`
+   is kept alongside it for the arrows, whose transform is the one movement
+   here that a motion-sensitive reader would actually notice. */
 @media (prefers-reduced-motion: reduce) {
-  .libcal-gantt-tabs__tab,
-  .libcal-gantt-agenda-filter__tab,
-  .libcal-gantt__bar,
-  .libcal-gantt__weekend-event,
-  .libcal-gantt-chart__more-button {
+  .libcal-gantt-chart {
+    --libcal-gantt-hover-in: 0s;
+    --libcal-gantt-hover-out: 0s;
+  }
+
+  .libcal-gantt-home__more-arrow,
+  .libcal-gantt-home__cta-arrow {
     transition: none;
+  }
+
+  /* Stated at hover-state specificity, or the nudge rules below simply
+     out-specify a plain `transform: none` on the arrow and the movement
+     happens anyway, just instantly. */
+  .libcal-gantt-home__more-button:hover .libcal-gantt-home__more-arrow,
+  .libcal-gantt-home__more-button:focus-visible .libcal-gantt-home__more-arrow,
+  .libcal-gantt-home__cta:hover .libcal-gantt-home__cta-arrow {
+    transform: none;
   }
 }
 
@@ -2084,6 +2407,23 @@ a.libcal-gantt-home__weekend-event:focus {
   .libcal-gantt {
     --libcal-gantt-day-min-width: 76px;
     --libcal-gantt-weekend-width: 76px;
+  }
+}
+
+/* Five tracks stop being five cards long before a phone. Below this the
+   homepage bands stack one card per row - one column, never two or three,
+   because an odd count in an even track grid is exactly the leftover-track
+   problem the fixed grid above was chosen to make harmless, and stacking
+   sidesteps it entirely rather than relying on that. The divider turns
+   horizontal to follow. */
+@container libcal-gantt (max-width: 760px) {
+  .libcal-gantt-home__days {
+    grid-template-columns: 1fr;
+  }
+
+  .libcal-gantt-home__day + .libcal-gantt-home__day {
+    border-left: 0;
+    border-top: 1px solid var(--libcal-gantt-border-subtle);
   }
 }
 
@@ -2142,7 +2482,18 @@ a.libcal-gantt-home__weekend-event:focus {
   }
 
   .libcal-gantt-agenda {
-    display: block;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 1rem;
+  }
+
+  .libcal-gantt-agenda-filter,
+  .libcal-gantt-agenda__weekend {
+    grid-column: 1 / -1;
+  }
+
+  .libcal-gantt-agenda__day.is-empty:not(.today_date) {
+    display: none;
   }
 
   .libcal-gantt-chart__more--desktop {
