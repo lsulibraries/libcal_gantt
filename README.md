@@ -22,9 +22,16 @@ automatically to a vertical, day-by-day agenda. Built for LSU Libraries.
   authenticated server-side with OAuth2 — no credentials or tokens ever reach
   the browser.
 - Multiple calendars as switchable tabs above the chart, e.g. "Events" and
-  "Library Displays". See [docs/features.md](docs/features.md).
+  "Library Displays". Switching keeps the current chart on screen under a
+  spinner overlay until the new data arrives, so the block never collapses to
+  a loading line and the page around it does not reflow — and a failed switch
+  leaves the calendar you were reading in place, with a note explaining why.
+  See [docs/features.md](docs/features.md).
 - Shows the next *N* weekdays (10 by default, Mon–Fri) in your site's
-  configured timezone, with a "Show more" button to page forward.
+  configured timezone, with a "Show more" button to page forward. "Show less"
+  collapses back, scrolling the block into view if collapsing left it above
+  the viewport and returning focus to the button that replaced it. Clearance
+  for a sticky site header is `--libcal-gantt-scroll-margin`.
 - Rows are a fixed, ordered allowlist keyed by LibCal **campus ID** — not
   room-level location text — with an "Online Event" row always first. Events
   from an unlisted campus are excluded rather than dumped in a catch-all.
@@ -32,14 +39,47 @@ automatically to a vertical, day-by-day agenda. Built for LSU Libraries.
   off-hours events, and overnight events on both days they touch), each
   showing time, location, and title. An all-day event shows "All day" instead
   of a literal `12:00 AM`–`11:59 PM`.
-- Repeated daily entries for the same display merge into one spanning bar.
-  See [docs/features.md](docs/features.md).
+- LibCal **event categories** ("Workshop", "Library Programs") render as tags
+  beside the location in all three views, capped per view with the rest in the
+  tooltip. Each tag carries `data-category="workshop"` so a single category can
+  be themed on its own. See [docs/theming.md](docs/theming.md).
+- **Multi-day events span; recurrences do not.** A single event that runs from
+  one date to another — a box drive, an exhibit, a week-long display — is drawn
+  once as a bar across the weekday columns it covers, in every view. It used to
+  be copied into every day it touched, so a fortnight-long donation bin
+  produced an identical card on ten days running. Separate same-time
+  occurrences of a repeating event (a 9 AM class held Tuesday *and* Wednesday)
+  are deliberately left as separate entries on the homepage — they are two
+  sittings a visitor chooses between, not one continuous thing. See
+  [docs/features.md](docs/features.md).
+- LibCal categories are filtered to an allowlist before rendering —
+  `CATEGORY_ALLOWLIST` in `js/gantt-timeline.js`, currently `['workshop']`.
+  A category outside it is hidden everywhere: no tag, no "+N" overflow count,
+  and no mention in a row's hover tooltip. Set it to `[]` to show every
+  category LibCal reports.
 - Optional per-row building hours from LibCal's Hours module, rendered as
   "Opens at 7:00 AM" / "Closes at 9:00 PM" captions whose tense follows the
-  clock. See [docs/building-hours.md](docs/building-hours.md).
+  clock. See [docs/building-hours.md](docs/building-hours.md). On the homepage
+  the per-day hours strip always sits below that day's events — inside the day
+  card on an ordinary Events band, and as a band-level row beneath the span
+  lanes on any band that has spanning items (all of Library Displays mode, and
+  an Events band containing a multi-day event), where those items are grid
+  items across the columns rather than card contents. The strip is always abbreviated and tabular ("Main",
+  "7 AM–midnight") on every card, busy or empty, so that read down the week it
+  forms a column of times in one shape rather than one row per format.
 - Weekend gaps get a dedicated accessory column (desktop) and divider
   (mobile), showing real weekend events or that row's weekend hours.
-- Featured images render as event-bar backgrounds on desktop.
+- Featured images render as event-bar backgrounds on desktop, and as a subtle
+  right-aligned wash behind homepage card rows and mobile agenda rows — faded
+  in from left to right so the text stays on clean surface, softened at the top
+  and bottom edges so the image has no hard edge of its own, and gently zoomed
+  on hover. The blend mode is set per palette, because the right one depends on
+  how light the surface is: `multiply` on the light palette, where it makes the
+  white canvas most LibCal flyers carry disappear into the card, and `normal`
+  on the dark palette, where multiply has no range left to darken into and
+  renders the image effectively invisible. Tunable via
+  `--libcal-gantt-item-image-opacity` / `-blend` / `-fade-start` / `-width` /
+  `-soften` / `-zoom`. See [docs/theming.md](docs/theming.md).
 - Responsive by design — day-column grid on wide screens, agenda list on
   phones, with no horizontal scrolling or unreadably thin bars on mobile.
 - Placeable block, zero JavaScript dependencies, and fully themeable via CSS
@@ -169,8 +209,9 @@ override examples, are in [docs/theming.md](docs/theming.md).
   instead; the settings form and `LibCalClient` are small enough that this is
   a quick change.
 - `/libcal-gantt/events` is intentionally public (`_access: TRUE`). It only
-  returns public event titles, times, and locations that LibCal itself
-  publishes, and never exposes the token or client secret.
+  returns public event titles, times, locations, categories, and featured
+  image URLs that LibCal itself publishes, and never exposes the token or
+  client secret.
 
 ## Documentation
 

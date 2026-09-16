@@ -183,6 +183,18 @@ class GanttEventsController extends ControllerBase {
             $weekendEvents[$event['row']][] = [
               'title' => $event['title'],
               'location' => $event['location'],
+              // Carried onto the weekend notes too, so a Saturday
+              // workshop is tagged the same way its weekday siblings are
+              // - the accessory column and the mobile weekend divider
+              // render from THIS subset, not from `events`.
+              'categories' => $event['categories'],
+              // Carried for the same reason as `categories`: the mobile
+              // weekend divider and the homepage weekend strip build their
+              // rows from THIS subset, and those rows now paint the
+              // featured image behind themselves (see applyItemImage() in
+              // gantt-timeline.js). The desktop weekend note ignores it -
+              // an 88px track has no room for a background image.
+              'image' => $event['image'],
               'url' => $event['url'],
               'startLabel' => $event['startLabel'],
               'endLabel' => $event['endLabel'],
@@ -502,10 +514,13 @@ class GanttEventsController extends ControllerBase {
       $imageAlt = (string) $event['featured_image_alt_text'];
     }
 
+    $categories = $this->extractCategories($event);
+
     return [
       'id' => $event['id'] ?? NULL,
       'title' => (string) ($event['title'] ?? 'Untitled event'),
       'location' => $location,
+      'categories' => $categories,
       'isOnline' => $isOnline,
       'row' => $row,
       'url' => $url,
@@ -515,6 +530,59 @@ class GanttEventsController extends ControllerBase {
       'endLabel' => $end->format('g:i A'),
       'segments' => $segments,
     ];
+  }
+
+  /**
+   * Pulls an event's LibCal category names out of the raw API payload.
+   *
+   * LibCal returns `category` as a LIST of `{id, name}` objects, not a
+   * single value: an event can carry several categories (or none at all,
+   * which is the common case for a plain room booking), so this always
+   * returns an array and the front end always renders zero or more tags
+   * rather than special-casing one.
+   *
+   * Only the NAME is kept. The numeric category id is stable and would be
+   * the right key for filtering, but nothing on the front end filters by
+   * category yet, and a tag has to print a label - shipping the id as
+   * well would mean two representations of the same fact in every event
+   * of every response for no current reader.
+   *
+   * Defensive about shape rather than trusting the documented contract:
+   * a bare string is accepted as its own name (some LibCal instances
+   * return flattened category lists), blank names are dropped so a
+   * mis-entered category can't render an empty tag, and duplicates are
+   * collapsed because a tag repeated twice on one event is noise.
+   *
+   * @param array<string, mixed> $event
+   *   One raw event as returned by the LibCal Events API.
+   *
+   * @return string[]
+   *   Category names in the order LibCal listed them.
+   */
+  protected function extractCategories(array $event): array {
+    $raw = $event['category'] ?? [];
+    if (!is_array($raw)) {
+      $raw = [$raw];
+    }
+
+    $categories = [];
+    foreach ($raw as $category) {
+      if (is_array($category)) {
+        $name = trim((string) ($category['name'] ?? ''));
+      }
+      elseif (is_scalar($category)) {
+        $name = trim((string) $category);
+      }
+      else {
+        continue;
+      }
+
+      if ($name !== '' && !in_array($name, $categories, TRUE)) {
+        $categories[] = $name;
+      }
+    }
+
+    return $categories;
   }
 
   /**

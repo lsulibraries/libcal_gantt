@@ -23,6 +23,7 @@
  *   1b. Light palette (token override only)
  *   2.  Chart root, box model, status messages
  *   2b. Host theme reset (winning the cascade against the parent)
+ *   2c. Busy overlay + switch notice (tab switching)
  *   3.  Calendar switcher tabs
  *   3b. Toolbar and light/dark toggle
  *   4.  Grid shell (.libcal-gantt / .libcal-gantt-block)
@@ -37,6 +38,8 @@
  *   13. "Show more" controls
  *   13b. Homepage variant (day cards)
  *   13c. Legend
+ *   13d. Category tags (LibCal event categories)
+ *   13e. Item background images (featured image behind a list row)
  *   14. Responsive - viewport media queries
  *   15. Responsive - container queries
  *   16. Site-specific placement (LSU)
@@ -96,6 +99,20 @@
   --libcal-gantt-header-bg: #261f33;
   --libcal-gantt-header-color: #f2eef8;
 
+  /* Unselected calendar-tab label: the header colour held back so the
+     selected tab reads as the brighter of the two. Expressed as an alpha
+     of the header colour rather than a flat grey so it stays correct
+     against whatever --libcal-gantt-header-bg a theme override sets.
+     Tuned to 6.75:1 here, comfortably past AA for the 12px type. */
+  --libcal-gantt-tab-idle-color: rgba(242, 238, 248, 0.66);
+  /* Edge marking the selected calendar tab - see section 3a. */
+  --libcal-gantt-tab-active-edge: rgba(242, 238, 248, 0.32);
+  /* Gap left above the block when a collapse scrolls it back into
+     view - see keepChartInView() in the JS. Raise it to clear a
+     sticky site header, which would otherwise cover the top of the
+     block at the moment the visitor is being shown it. */
+  --libcal-gantt-scroll-margin: 1rem;
+
   /* ---- "Today" column --------------------------------------------------
      Written by gantt-timeline.js as `today_date` on the day-header cell
      AND on every body cell in that same column (see applyDayStateClasses()
@@ -132,6 +149,88 @@
   --libcal-gantt-closed-color: #f07a7a;
   --libcal-gantt-error-color: #ff9090;
 
+  /* ---- Busy overlay ----------------------------------------------------
+     The scrim drawn over the whole chart while a calendar tab switch is in
+     flight (see section 2c). Deliberately light: the chart underneath is
+     still real, still current data, and the point of the overlay is that
+     a visitor can see their view being updated rather than watching it
+     vanish. Enough tint to read as "not interactive yet", not enough to
+     hide what is being replaced. */
+  --libcal-gantt-overlay-scrim: rgba(18, 15, 25, 0.45);
+  --libcal-gantt-spinner-track: rgba(233, 229, 240, 0.25);
+  --libcal-gantt-spinner-head: var(--libcal-gantt-today-accent);
+  --libcal-gantt-spinner-size: 18px;
+  --libcal-gantt-spinner-speed: 0.8s;
+
+  /* ---- Category tags ---------------------------------------------------
+     LibCal event categories ("Workshop", "Exhibit"...) - see section 13d.
+
+     Neutral on purpose, and the one tag family in this component with no
+     hue of its own. The venue tags above already spend three colours
+     answering WHERE an event is; a category answers WHAT KIND it is, and a
+     fourth hue competing in the same line would make the two look like
+     variants of one system. The distinction is carried by SHAPE instead -
+     a pill, against the venue tag's rounded rectangle - which stays
+     legible at 0.6875rem where a colour difference does not. Any site that
+     does want "Workshop" in its own colour can reach one category at a
+     time through the `data-category` attribute each tag carries. */
+  --libcal-gantt-tag-color: #cfc7de;
+  --libcal-gantt-tag-bg: rgba(255, 255, 255, 0.06);
+  --libcal-gantt-tag-edge: rgba(255, 255, 255, 0.2);
+
+  /* ---- Item background images ------------------------------------------
+     A LibCal featured image washed in behind a homepage card row or a
+     mobile agenda row - see section 13e.
+
+     `blend: multiply` is the reason this works on the real feed at all.
+     Library event graphics are overwhelmingly flyers exported on a WHITE
+     canvas, and a white rectangle dropped into a row is not a background,
+     it is a hole.
+
+     `blend` is therefore the token that matters most, and its right value
+     depends entirely on how dark the surface is. MULTIPLY is the mode that
+     makes a white canvas vanish - it maps white to the surface behind it
+     exactly - and on the light palette below that is precisely what it
+     does. On THIS palette it cannot work, and it is worth writing down
+     why, because the failure is quiet rather than obvious: multiply can
+     only ever darken, the card underneath is already at about 10% of white
+     (#1c1826), and so there is almost no range left to darken into. The
+     measured result on a real flyer was a card at rgb(27, 25, 37) against
+     a brightest-image pixel of rgb(35, 30, 49) - a 3-5% difference, below
+     the threshold of perception on an ordinary monitor. The image was
+     painting perfectly and could not be seen.
+
+     So the dark palette blends NORMAL and leans on opacity plus the mask
+     for its subtlety instead of on a blend mode. The flyer keeps its own
+     colour, which is the reason for showing it at all. A white canvas
+     reads here as a soft light wash fading in from the right rather than
+     disappearing outright - acceptable, and much closer to the intent than
+     an invisible image. Two alternatives, both one line:
+       `luminosity` - drops the flyer's colour and re-tints it to the
+                      card's own hue, the most cohesive option, at the cost
+                      of every image looking purple.
+       `screen`     - the mirror of multiply: hides BLACK rather than
+                      white, so it suits art that runs light-on-dark.
+
+     `fade-start` is where the left-to-right reveal begins, and `width` is
+     how much of the row's right end the image layer occupies at all. Both
+     keep the time, title, location and tags on the left over untouched
+     surface. */
+  --libcal-gantt-item-image-opacity: 0.38;
+  --libcal-gantt-item-image-blend: normal;
+  --libcal-gantt-item-image-fade-start: 0%;
+  --libcal-gantt-item-image-width: 62%;
+  /* How far the layer also fades at its top and bottom edges. This is the
+     price of blending `normal` on a dark surface: multiply used to dispose
+     of a white flyer canvas for free, and without it a white canvas fills
+     the layer to all four edges and reads as a pasted-in slab - the exact
+     "white rectangle is a hole" problem noted above, just inverted. Fading
+     the horizontal edges too turns that slab into a vignette with no edge
+     of its own, which a photo benefits from as well. Set to 0 to square
+     the layer off again. */
+  --libcal-gantt-item-image-soften: 26%;
+  --libcal-gantt-item-image-zoom: 1.09;
+
   /* Venue tag colours, used by the homepage variant's location tags (see
      section 13b). Three hues to separate the three places events actually
      happen, deliberately chosen from OUTSIDE the two colours that already
@@ -157,6 +256,20 @@
   --libcal-gantt-venue-online-color: #7fd8d0;
   --libcal-gantt-venue-online-bg: rgba(64, 180, 170, 0.16);
   --libcal-gantt-venue-online-edge: rgba(64, 180, 170, 0.5);
+
+  /* The same three families for the hours footer, each mixed 55% toward
+     --libcal-gantt-text-muted.
+
+     The footer labels are a supporting line at 0.72em, not tags. At tag
+     saturation they were the brightest thing in the band and out-coloured
+     the very chips they are meant to echo. Mixing toward the muted TEXT
+     colour rather than toward the background desaturates without dimming:
+     each of these still clears 7:1 against --libcal-gantt-header-bg, well
+     past the 4.5:1 floor the tags hold to, so the label gets quieter
+     without getting fainter. */
+  --libcal-gantt-venue-main-muted: #b5a3d8;
+  --libcal-gantt-venue-hill-muted: #cea6c6;
+  --libcal-gantt-venue-online-muted: #9cbec9;
 
   /* The fallback for any location this module has not been taught to
      recognise - see venueKey(). Neutral, but still shaped like a tag. */
@@ -263,6 +376,17 @@
   --libcal-gantt-header-bg: #f4f1fa;
   --libcal-gantt-header-color: #2c1e45;
 
+  /* Same idea as the dark theme's, inverted: dark ink held back against a
+     near-white header. A HARDCODED light value here would vanish - this is
+     the variable that keeps the subtle tab treatment legible in both
+     themes. 5.81:1, past AA. */
+  --libcal-gantt-tab-idle-color: rgba(44, 30, 69, 0.72);
+  /* 0.42 against the light palette's paler surface, not the dark
+     palette's 0.32: matched by eye it came out barely a shade off the
+     idle border it has to be told apart from. Both now sit ~43 points
+     of luminance from their own idle edge. */
+  --libcal-gantt-tab-active-edge: rgba(44, 30, 69, 0.42);
+
   /* Full-strength LSU purple, which the dark theme cannot use for bars
      (it disappears into a dark surface) but which is the correct brand
      colour on white. */
@@ -287,6 +411,27 @@
   --libcal-gantt-closed-color: #a81f18;
   --libcal-gantt-error-color: #a81f18;
 
+  /* A pale scrim, so the busy overlay still reads as a veil rather than as
+     a hole punched in a light card. */
+  --libcal-gantt-overlay-scrim: rgba(255, 255, 255, 0.6);
+  --libcal-gantt-spinner-track: rgba(33, 26, 45, 0.18);
+
+  /* Category tags, inverted like the venue tags: ink on a pale wash of the
+     surface, still hueless. 8.4:1 on the light card. */
+  --libcal-gantt-tag-color: #4a4358;
+  --libcal-gantt-tag-bg: #f1eff7;
+  --libcal-gantt-tag-edge: #d6d1e2;
+
+  /* Multiply is at its best here, and is the one place in this file it is
+     used: a white flyer canvas maps straight onto a near-white card and
+     disappears, leaving only the artwork's own ink. Because the surface is
+     light there is a full range to darken into, so the image needs far
+     less help to be visible and is held back to stay a background rather
+     than a picture. See the dark palette in section 1 for why the same
+     pair of values cannot be used there. */
+  --libcal-gantt-item-image-opacity: 0.3;
+  --libcal-gantt-item-image-blend: multiply;
+
   /* Dark-on-light hatch, the inverse of section 1's light-on-dark pair. */
   --libcal-gantt-hatch-a: rgba(33, 26, 45, 0.035);
   --libcal-gantt-hatch-b: rgba(33, 26, 45, 0.075);
@@ -308,6 +453,13 @@
   --libcal-gantt-venue-online-color: #0f5f59;
   --libcal-gantt-venue-online-bg: #e6f7f5;
   --libcal-gantt-venue-online-edge: #a9dcd7;
+
+  /* Footer labels again, mixed 55% toward this theme's #574f6b, so they
+     desaturate by darkening rather than by lightening. 7.3:1 to 8.8:1 on
+     the light header-bg. */
+  --libcal-gantt-venue-main-muted: #4f3873;
+  --libcal-gantt-venue-hill-muted: #6f3f64;
+  --libcal-gantt-venue-online-muted: #375663;
 }
 
 /* =========================================================================
@@ -316,6 +468,10 @@
 
 .libcal-gantt-chart {
   font-size: var(--libcal-gantt-font-size);
+  /* Honoured by the collapse's scrollIntoView() and by any in-page anchor
+     that lands on the block. Declared here rather than at the call site so
+     a theme can retune it without touching the script. */
+  scroll-margin-top: var(--libcal-gantt-scroll-margin, 1rem);
   /* Set explicitly rather than inherited: the module paints its own dark
      surfaces, so it can't rely on whatever text colour the host theme
      happens to pass down - a light theme's near-black body colour on
@@ -416,6 +572,111 @@
 }
 
 /* =========================================================================
+   2c. BUSY OVERLAY + SWITCH NOTICE
+   -------------------------------------------------------------------------
+   Shown while a calendar tab switch is in flight (see beginBusy() in
+   gantt-timeline.js). Switching used to empty the block down to a
+   one-line "Loading upcoming events…" and then re-expand to the new
+   calendar's height, which shrank and re-grew the whole page on every
+   click. Now the previous chart stays exactly where it is, under this
+   scrim, until the new data is ready to replace it in one paint.
+
+   Two things do the work: the overlay, which says the block is updating,
+   and the min-height JavaScript pins on the chart root for the duration of
+   the request, which stops the surrounding page reflowing. Both are
+   temporary - neither leaves a trace in the markup once the switch lands.
+   ========================================================================= */
+
+.libcal-gantt-chart.is-busy {
+  /* Belt and braces for the containing block. `container-type:
+     inline-size` on the root (section 2) already establishes one through
+     layout containment, but that is a side effect of a feature enabled for
+     an unrelated reason - stating the intent here means the overlay cannot
+     silently escape to the viewport if that ever changes. */
+  position: relative;
+}
+
+.libcal-gantt-chart__overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  /* Top-anchored rather than centred: the full grid can be several
+     screens tall, and a spinner centred in it may be nowhere near the
+     tabs the visitor just clicked - or even off screen. This keeps it
+     next to the control that started the wait, while the clamp stops it
+     sitting flush against the tabs on a short homepage teaser. */
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: clamp(1rem, 10%, 6rem);
+  background: var(--libcal-gantt-overlay-scrim);
+  /* The overlay is also the click blocker: it covers the tabs, so a second
+     switch cannot be started while the first is still in flight (which
+     switchCalendar()'s own state.loading guard would reject anyway). */
+  cursor: progress;
+}
+
+.libcal-gantt-chart__overlay-box {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--libcal-gantt-border);
+  border-radius: 999px;
+  background: var(--libcal-gantt-header-bg);
+  box-shadow: 0 2px 10px var(--libcal-gantt-shadow);
+  color: var(--libcal-gantt-text);
+  font-size: 0.8125rem;
+}
+
+.libcal-gantt-chart__spinner {
+  flex: 0 0 auto;
+  width: var(--libcal-gantt-spinner-size);
+  height: var(--libcal-gantt-spinner-size);
+  border: 2px solid var(--libcal-gantt-spinner-track);
+  /* One coloured arc on an otherwise even ring is what makes the rotation
+     legible; a full ring would spin invisibly. */
+  border-top-color: var(--libcal-gantt-spinner-head);
+  border-radius: 50%;
+  animation: libcal-gantt-spin var(--libcal-gantt-spinner-speed) linear infinite;
+}
+
+@keyframes libcal-gantt-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The reduced-motion stand-in for the spin (see section 14): the same ring,
+   fading rather than turning, so the overlay still reads as active without
+   anything on screen moving. */
+@keyframes libcal-gantt-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* A calendar that failed to load, reported without taking the chart down -
+   the previous calendar's data is still on screen and still correct, so
+   this has to explain why the tab appears not to have changed. Styled as a
+   note rather than as the full-block .libcal-gantt-chart__error, which
+   replaces a chart instead of annotating one. */
+.libcal-gantt-chart__notice {
+  margin: 0 0 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid var(--libcal-gantt-error-color);
+  border-radius: 4px;
+  background: var(--libcal-gantt-header-bg);
+  color: var(--libcal-gantt-text);
+  font-size: 0.8125rem;
+}
+
+/* =========================================================================
    3. CALENDAR SWITCHER TABS
    -------------------------------------------------------------------------
    Only rendered at all when more than one calendar is configured (see
@@ -429,7 +690,12 @@
 .libcal-gantt-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 0;
+
+  /* See .libcal-gantt-agenda-filter: flush along a row, spaced between
+     rows. Two short labels rarely wrap, but a long calendar name in a
+     narrow block will. */
+  column-gap: 0;
+  row-gap: 6px;
   margin-bottom: 1rem;
   position: sticky;
   left: 0;
@@ -437,13 +703,22 @@
 
 .libcal-gantt-tabs__tab {
   font: inherit;
-  font-size: 0.875rem;
-  font-weight: 600;
+
+  /* Small uppercase with open tracking, so the pair reads as a label for
+     the view rather than as two competing buttons. 0.75rem and 0.08em
+     rather than 12px and 1px: the tracking then stays proportional if the
+     type scales, and the type scales with a visitor's own font-size
+     setting instead of ignoring it. */
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+
   padding: 0.5rem 1.1rem;
   border: 1px solid var(--libcal-gantt-border);
   border-radius: 0;
   background: var(--libcal-gantt-header-bg);
-  color: var(--libcal-gantt-header-color);
+  color: var(--libcal-gantt-tab-idle-color);
   cursor: pointer;
   white-space: nowrap;
   transition: background var(--libcal-gantt-hover-out) ease-in,
@@ -451,29 +726,90 @@
     border-color var(--libcal-gantt-hover-out) ease-in;
 }
 
+/* Segments share one hairline between them. Done by pulling each button a
+   pixel left onto its neighbour's border rather than by dropping its own
+   left border, because these rows WRAP - the building filter carries four
+   labels as long as "Hill Memorial Library" and cannot fit a phone on one
+   line in any type size. With the border simply removed, every button that
+   wrapped to a new row lost its left edge and sat there with three sides.
+   Overlapping keeps the edge and still collapses the doubled line. */
 .libcal-gantt-tabs__tab + .libcal-gantt-tabs__tab,
 .libcal-gantt-agenda-filter__tab + .libcal-gantt-agenda-filter__tab {
-  border-left-width: 0;
+  margin-left: -1px;
 }
 
+/* The overlap means later siblings paint over earlier ones, which would
+   let a neutral left border cover the selected button's purple right
+   border - the one thing the selected state is signalled with. Lifting the
+   selected button out of the paint order keeps its outline whole. */
+.libcal-gantt-tabs__tab.is-active,
+.libcal-gantt-agenda-filter__tab.is-active {
+  position: relative;
+  z-index: 1;
+}
+
+/* Above .is-active's z-index, so a focus ring is never clipped by the
+   selected neighbour it overlaps. */
 .libcal-gantt-tabs__tab:focus-visible,
 .libcal-gantt-agenda-filter__tab:focus-visible {
   outline: 2px solid var(--libcal-gantt-today-accent);
   outline-offset: 2px;
   position: relative;
-  z-index: 1;
+  z-index: 2;
 }
 
+/* Hover brightens the LABEL and leaves the border alone. It used to turn
+   the border purple, which was unambiguous while the selected tab was a
+   filled purple block - but now that purple border IS the selected marker,
+   so hovering the unselected tab made it impersonate the selected one.
+   Raising the held-back label to full strength is the same "this is live"
+   feedback without borrowing the one signal that already means something
+   else. */
 .libcal-gantt-tabs__tab:hover:not(.is-active) {
   transition-duration: var(--libcal-gantt-hover-in);
-  border-color: var(--libcal-gantt-bar-bg);
+  color: var(--libcal-gantt-header-color);
 }
 
+/* The selected tab keeps the same background as the unselected one and is
+   marked by the brand-purple border plus full-strength label text. The
+   filled purple block it used to be was the loudest thing in the header
+   and read as a primary action - something to click - when it is in fact a
+   statement of where you already are.
+
+   Colour is not carrying this alone: buildCalendarTabs() sets
+   aria-pressed on both buttons, so the state is available to a screen
+   reader whatever the styling does. */
 .libcal-gantt-tabs__tab.is-active {
-  background: var(--libcal-gantt-bar-bg);
-  border-color: var(--libcal-gantt-bar-bg);
-  color: var(--libcal-gantt-bar-color);
+  background: var(--libcal-gantt-header-bg);
+  /* A translucent neutral rather than brand purple. The purple edge read as
+     an accent - something coloured in to be noticed - when all this has to
+     do is mark which of two views you are already looking at, and it also
+     put a second competing brand colour next to the gold Full Calendar
+     button. Translucent so it picks up whatever surface it is drawn on and
+     stays a shade of that surface in both palettes. */
+  border-color: var(--libcal-gantt-tab-active-edge);
+
+  /* header-color, NOT bar-color. bar-color is the ink for text sitting ON
+     a purple bar and is pure white in both themes - correct against the
+     old filled background, invisible against this one in light mode. */
+  color: var(--libcal-gantt-header-color);
   cursor: default;
+}
+
+/* While a tab switch is in flight the tabs are marked aria-disabled rather
+   than `disabled`, so keyboard focus is not thrown to the document body
+   mid-switch (see setCalendarTabsBusy() in gantt-timeline.js). This is the
+   visual half of that: the pointer says "waiting", and the hover
+   brightening is withheld so the control does not invite a second click it
+   would only reject. Mostly belt and braces - the busy overlay (section
+   2c) already sits over these buttons - but it still applies to a tab that
+   holds focus underneath it. */
+.libcal-gantt-tabs__tab[aria-disabled='true'] {
+  cursor: progress;
+}
+
+.libcal-gantt-tabs__tab[aria-disabled='true']:hover:not(.is-active) {
+  color: var(--libcal-gantt-tab-idle-color);
 }
 
 /* =========================================================================
@@ -1198,27 +1534,53 @@ a.libcal-gantt__weekend-event:focus {
 /*
  * "All buildings / <row> / <row>..." filter row at the top of the mobile
  * agenda - see buildAgendaRowFilter() in gantt-timeline.js. Only
- * rendered at all when more than one location row is configured. Same
- * tab-styled button look as .libcal-gantt-tabs, reused here rather than
- * shared outright since the two live in different views (desktop grid
- * vs. mobile agenda) and are never both visible at once.
+ * rendered at all when more than one location row is configured.
+ *
+ * Carries the same treatment as .libcal-gantt-tabs, one step smaller, and
+ * has to: on a phone the calendar switcher renders above the agenda and
+ * this filter renders inside it, so BOTH are on screen together. An
+ * earlier note here claimed they were never visible at once and used that
+ * to justify letting them drift - which is how the switcher ended up
+ * restyled and this control left behind as a filled purple block sitting
+ * an inch below it.
+ *
+ * Still declared separately rather than sharing a selector list: the two
+ * differ in size, tracking and padding because their labels differ in
+ * length, and the shared parts are the theme variables both read.
  */
 .libcal-gantt-agenda-filter {
   display: flex;
   flex-wrap: wrap;
-  gap: 0;
+
+  /* No gap along a row, so the segments read as one control; a small gap
+     BETWEEN rows, because this control always wraps on a phone and two
+     rows sitting flush would meet in a doubled 2px seam that looks like a
+     rule through the middle of the group. */
+  column-gap: 0;
+  row-gap: 6px;
   margin-bottom: 1rem;
 }
 
 .libcal-gantt-agenda-filter__tab {
   font: inherit;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  padding: 0.4rem 0.9rem;
+
+  /* Same small-uppercase treatment as the calendar switcher, one step
+     down: this is a filter within the view, not the choice of view, and it
+     sits directly below the switcher on a phone where both are visible at
+     once. Tracking is 0.06em rather than 0.08em and the padding is tighter
+     because these labels are the full row names - "Hill Memorial Library"
+     is 21 characters, and uppercase with open tracking is the widest way
+     to set it. */
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+
+  padding: 0.45rem 0.7rem;
   border: 1px solid var(--libcal-gantt-border);
   border-radius: 0;
   background: var(--libcal-gantt-header-bg);
-  color: var(--libcal-gantt-header-color);
+  color: var(--libcal-gantt-tab-idle-color);
   cursor: pointer;
   white-space: nowrap;
   transition: background var(--libcal-gantt-hover-out) ease-in,
@@ -1228,13 +1590,13 @@ a.libcal-gantt__weekend-event:focus {
 
 .libcal-gantt-agenda-filter__tab:hover:not(.is-active) {
   transition-duration: var(--libcal-gantt-hover-in);
-  border-color: var(--libcal-gantt-bar-bg);
+  color: var(--libcal-gantt-header-color);
 }
 
 .libcal-gantt-agenda-filter__tab.is-active {
-  background: var(--libcal-gantt-bar-bg);
+  background: var(--libcal-gantt-header-bg);
   border-color: var(--libcal-gantt-bar-bg);
-  color: var(--libcal-gantt-bar-color);
+  color: var(--libcal-gantt-header-color);
   cursor: default;
 }
 
@@ -1242,6 +1604,33 @@ a.libcal-gantt__weekend-event:focus {
   font-size: 0.8125rem;
   color: var(--libcal-gantt-text-muted);
   margin: -0.15rem 0 0.5rem;
+}
+
+/* "On display" - the agenda's stand-in for the card grid's span layer. A
+   merged display belongs to the week, so it is printed once above that
+   week's day sections rather than repeated inside each of them. */
+.libcal-gantt-agenda__displays {
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.625rem 0.375rem;
+  border: 1px solid var(--libcal-gantt-border-subtle);
+  border-left: 3px solid var(--libcal-gantt-today-accent);
+  background: var(--libcal-gantt-block-bg);
+}
+
+.libcal-gantt-agenda__displays-title {
+  font-size: 0.72em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--libcal-gantt-text-subtle);
+  margin-bottom: 0.25rem;
+}
+
+.libcal-gantt-agenda__range {
+  display: block;
+  font-size: 0.78em;
+  color: var(--libcal-gantt-text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .libcal-gantt-agenda__empty {
@@ -1689,20 +2078,85 @@ a.libcal-gantt-agenda__link:focus {
   background: var(--libcal-gantt-block-bg);
 }
 
-/* Library Displays use the same card grid, but their weekly/location
-   records are real grid items: one item occupies the covered weekday
-   columns instead of being copied into each card. Cards stay in row one;
-   explicit span lanes below them keep multiple locations readable. */
+/* A band with a SPAN LAYER. Used by Library Displays (every record is a
+   weekly/location span) and by an Events band that contains a genuinely
+   multi-day event - a box drive, an exhibit. Either way the spanning thing
+   is a real grid item occupying the weekday columns it covers instead of
+   being copied into each card. Cards stay in row one; explicit span lanes
+   below them keep multiple concurrent spans readable. */
 .libcal-gantt-home__days--display-spans {
-  grid-template-rows: auto repeat(var(--libcal-gantt-display-lanes, 1), auto);
+  /* Cards, then one row per display lane, then ONE MORE ROW for the hours
+     strips. The trailing `auto` is what lets the strip be addressed as
+     `grid-row: -2` below without the JS having to know how many lanes the
+     band ended up with. */
+  grid-template-rows: auto repeat(var(--libcal-gantt-display-lanes, 1), auto) auto;
   align-items: start;
 }
 
 .libcal-gantt-home__days--display-spans > .libcal-gantt-home__day {
   grid-row: 1;
+  /* The band sets `align-items: start` so a one-lane bar does not stretch
+     down its whole row. Cards have to opt back OUT of that. In Library
+     Displays mode they are header-only and all the same height, so it
+     never showed; an Events card carries its own event list, and start-
+     aligned they would each shrink to their own content - a two-event
+     Tuesday sitting visibly taller than a one-event Monday beside it,
+     while bands with no span layer keep their cards equal height. */
+  align-self: stretch;
+}
+
+/* The hours strip in a band with a span layer: a band-level cell under the
+   span lanes rather than a footer inside the card (see
+   appendHomepageBandHours()). `-2` counts back from the end of the
+   explicit rows, so it lands in the trailing track above whatever number
+   of lanes the band drew.
+
+   The margins are reset because the in-card form bleeds its background out
+   to the card's edges with negative margins sized to the CARD's padding.
+   As a grid cell it already occupies the full column and has no padding to
+   escape from, so those margins would just pull it out of alignment.
+
+   DOUBLE CLASS, and not for show. `.libcal-gantt-home__day-hours` sets that
+   bleed (`width: calc(100% + 28px)`, `margin: auto -14px -12px`) and is
+   declared LATER in this file, in the day-card section. At equal
+   specificity the later rule wins, so a single-class version of this
+   selector lost the width and margins it is here to reset: every lane cell
+   rendered 28px wider than its column, hanging 14px into the neighbour on
+   each side, where the next cell's opaque header background painted over
+   the overflow and cut its closing time off mid-glyph - the clipped
+   "7 AM-midni" under a merged event, with only the last column, which has
+   no next sibling to cover it, coming out whole. The extra class outranks
+   the bleed wherever the two sit in the file, which is the property this
+   rule needs to be able to rely on. Keep it if the sections move. */
+.libcal-gantt-home__day-hours.libcal-gantt-home__day-hours--lane {
+  grid-column: var(--libcal-gantt-span-from, 1);
+  grid-row: -2;
+  width: auto;
+  /* Padding is deliberately NOT reset: 8px 14px from the base rule insets
+     the times from the column edge by the same 14px the card pads its own
+     contents by, which is what keeps a band-level strip aligned with the
+     card text above it. */
+  margin: 0;
+}
+
+/* Keeps the column dividers running through the strip, so each day's times
+   stay visibly attached to the day above them instead of merging into one
+   unbroken band. Only between adjacent cells: the first strip follows a
+   span in the DOM, so it correctly gets no left edge. */
+.libcal-gantt-home__day-hours--lane + .libcal-gantt-home__day-hours--lane {
+  border-left: 1px solid var(--libcal-gantt-border-subtle);
 }
 
 .libcal-gantt-home__item--span {
+  /* A div placed into the band grid, not an <li> in a card list - see the
+     tagName argument in buildHomepageItem(). */
+  list-style: none;
+
+  /* Written by appendHomepageSpans() as properties rather than as
+     inline grid coordinates, so the single-column phone layout below can
+     re-place the whole layer without fighting inline styles. */
+  grid-column: var(--libcal-gantt-span-from, 1) / span var(--libcal-gantt-span-span, 1);
+  grid-row: var(--libcal-gantt-span-lane, 2);
   min-width: 0;
   margin: 0.375rem;
   padding: 0 0.5rem;
@@ -1713,6 +2167,77 @@ a.libcal-gantt-agenda__link:focus {
 
 .libcal-gantt-home__item--span + .libcal-gantt-home__item--span {
   border-top: 1px solid var(--libcal-gantt-border-subtle);
+}
+
+/* The bar measures a duration against the weekday columns, so its ends
+   have to mean something. An end INSIDE the visible window keeps the
+   0.375rem inset and its border; an end the window cut off loses both and
+   gains a chevron, so a display that runs past Friday reads as continuing
+   rather than as finishing there. */
+.libcal-gantt-home__item--span.is-clipped-start {
+  margin-left: 0;
+  border-left-width: 3px;
+  padding-left: 1.5rem;
+  position: relative;
+}
+
+.libcal-gantt-home__item--span.is-clipped-end {
+  margin-right: 0;
+  border-right: 0;
+  padding-right: 1.5rem;
+  position: relative;
+}
+
+.libcal-gantt-home__item--span.is-clipped-start::before,
+.libcal-gantt-home__item--span.is-clipped-end::after {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--libcal-gantt-today-accent);
+  font-size: 0.9em;
+  line-height: 1;
+  /* Decoration: the range text beside it carries the same fact in words,
+     so this must not be announced as a stray character. */
+  content: '';
+}
+
+.libcal-gantt-home__item--span.is-clipped-start::before {
+  left: 0.5rem;
+  content: '\2039';
+}
+
+.libcal-gantt-home__item--span.is-clipped-end::after {
+  right: 0.5rem;
+  content: '\203a';
+}
+
+/* A display already introduced in an earlier week band. Quieter chip, so
+   the eye lands on the weeks where something starts. */
+.libcal-gantt-home__item--span.is-continued .libcal-gantt-home__time--chip {
+  border-color: var(--libcal-gantt-border);
+  color: var(--libcal-gantt-text-muted);
+}
+
+/* Stated once per week band when the week has no displays at all - see
+   appendHomepageSpans(). Placed in the span layer's first lane so
+   it sits where a bar would have, not where a card's body is. */
+.libcal-gantt-home__display-empty {
+  grid-column: var(--libcal-gantt-span-from, 1) / -1;
+  grid-row: var(--libcal-gantt-span-lane, 2);
+  margin: 0;
+  padding: 10px 14px;
+  border-top: 1px solid var(--libcal-gantt-border-subtle);
+  color: var(--libcal-gantt-text-muted);
+  font-size: 0.8em;
+}
+
+.libcal-gantt-home__item-range {
+  display: block;
+  margin-top: 2px;
+  color: var(--libcal-gantt-text-muted);
+  font-size: 0.72em;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
 }
 
 
@@ -1864,6 +2389,21 @@ a.libcal-gantt-agenda__link:focus {
   margin: 0;
   padding: 0;
   list-style: none;
+
+  /* Hairline between the date and the day's events, the same weight as the
+     one between items and the one above the hours footer.
+
+     Carried by the list rather than as a border-bottom on the head, so a
+     card with nothing scheduled does not draw a rule under its date and
+     then a second one above its hours a few pixels below it. No list, no
+     line - which is also why this needs no :empty or :has() guard.
+
+     Inset to the card's content column rather than bled to the card edges
+     the way the hours footer is. Bled at both ends it would frame the
+     body, and the point of an unbordered card here is that the stretch to
+     the tallest row reads as banner rather than as a drawn-out empty
+     box. */
+  border-top: 1px solid var(--libcal-gantt-border-subtle);
 }
 
 .libcal-gantt-home__item {
@@ -1894,6 +2434,21 @@ a.libcal-gantt-agenda__link:focus {
   color: var(--libcal-gantt-text);
   text-decoration: none;
   transition: background var(--libcal-gantt-hover-out) ease-in;
+}
+
+/* More air per event than the 6px the link carries by default.
+
+   Set on the link rather than on the <li> so the hover fill grows with the
+   row: padding on the item would have pushed the link inward and left an
+   unpainted band between the highlight and the hairline above it, making
+   the highlight look smaller than the row it belongs to.
+
+   Scoped to a card list so the full-width display bars keep the tighter
+   6px. Those are divs in the span band with their own margin, border and
+   left accent - a bordered component whose height is its own business,
+   not a row in this list. */
+.libcal-gantt-home__list .libcal-gantt-home__link {
+  padding-block: 9px;
 }
 
 a.libcal-gantt-home__link:hover,
@@ -2066,7 +2621,80 @@ a.libcal-gantt-home__link:focus .libcal-gantt-home__item-title {
   color: var(--libcal-gantt-text-subtle);
   font-size: 0.72em;
   line-height: 1.3;
-  overflow-wrap: anywhere;
+  /* break-word rather than anywhere. This band used to be one flat run of
+     text where anywhere was the only thing keeping a long location name
+     from overflowing; now that it is a stack of rows, anywhere would work
+     against it. It drops each item's min-content width to a single
+     character, which lets a flex item shrink and break its own word mid-way
+     instead of wrapping to the next line - so "HILL MEMORIAL LIBRARY" would
+     split across two lines while its time sat beside it. break-word leaves
+     the min-content width at the longest word, so the row wraps first and
+     only breaks a word that could not fit on a line of its own. */
+  overflow-wrap: break-word;
+  /* The compact form is a column of times read down the week, so the
+     digits have to align - see compactHoursSummary(). */
+  font-variant-numeric: tabular-nums;
+
+  /* ONE ROW PER LOCATION. "Main Library 7:00 AM - midnight - Hill Memorial
+     Library 9:00 AM - 5:00 PM" set the name and its hours in the same size,
+     weight and colour, divided by the same middot that divided the two
+     locations - so the only thing marking where a name ended and its hours
+     began was knowing which was which already. They answer two separate
+     questions and now occupy two separate rows. */
+  display: flex;
+  flex-direction: column;
+  row-gap: 3px;
+}
+
+.libcal-gantt-home__hours-row {
+  /* Each pair is its own flex line, not a row of a two-column grid. A grid
+     would size one label column to the widest name in the card and hold
+     every row to it, so the spelled-out form an empty card gets - "Hill
+     Memorial Library", 21 characters, uppercase and tracked out - would
+     squeeze the times into whatever was left over. As independent lines, a
+     pair too wide for its card simply drops its time to the next line while
+     the pairs that do fit still push their times to the card's right edge.
+     No container query, no width to guess at. */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  column-gap: 0.7em;
+}
+
+.libcal-gantt-home__hours-venue {
+  /* A held-back tracked-out label, the same treatment as the day name at
+     the top of the card: this is what the hours are FOR, not the hours
+     themselves. */
+  font-size: 0.94em;
+  font-weight: 600;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+  /* Anything venueKey() does not recognise stays neutral rather than
+     inventing a colour for it. */
+  color: var(--libcal-gantt-venue-other-color);
+}
+
+.libcal-gantt-home__hours-venue--main {
+  color: var(--libcal-gantt-venue-main-muted);
+}
+
+.libcal-gantt-home__hours-venue--hill {
+  color: var(--libcal-gantt-venue-hill-muted);
+}
+
+.libcal-gantt-home__hours-venue--online {
+  color: var(--libcal-gantt-venue-online-muted);
+}
+
+.libcal-gantt-home__hours-time {
+  /* Full text strength - this is the answer being looked up. Pushed to the
+     right edge by the row's space-between, which turns the times into a
+     column down the week: a day that closes earlier than its neighbours
+     reads as a shorter number in line rather than as a different phrase
+     buried in a sentence. */
+  color: var(--libcal-gantt-text);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---- Weekend strip ---- */
@@ -2120,9 +2748,100 @@ a.libcal-gantt-home__weekend-event:focus {
   text-decoration: underline;
 }
 
-.libcal-gantt-home__weekend-hours {
-  color: var(--libcal-gantt-text-muted);
+/* Weekend strip, Option A. This line used to be one flat run of text at a
+ * flatter grey than anything near it, which is why it read as the hardest
+ * thing on the variant: a venue name, two day names and two time ranges all
+ * arrived at the same weight, so there was no shape to scan. The fix is
+ * structural rather than a colour change - the same venue/label/time
+ * hierarchy the day cards already use, so the eye can read straight down
+ * the column instead of re-parsing a sentence. */
+.libcal-gantt-home__weekend-hours-group {
+  display: flex;
+  /* Deterministic direction. The venue separator below is an inline-start
+   * border, and a border can only be trusted not to orphan itself at the
+   * head of a wrapped line if the wrap direction is known - so this does
+   * not inherit the detail container's free-wrapping flow. */
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.75em;
+  row-gap: 0.2em;
   font-size: 0.74em;
+  color: var(--libcal-gantt-text-muted);
+}
+
+.libcal-gantt-home__weekend-hours {
+  display: inline-flex;
+  align-items: baseline;
+  /* A single venue never breaks mid-run; the group wraps between venues. */
+  flex-wrap: nowrap;
+  column-gap: 0.4em;
+}
+
+/* The rule sits on the second and later venues, so it never leads the row. */
+.libcal-gantt-home__weekend-hours + .libcal-gantt-home__weekend-hours {
+  padding-inline-start: 0.75em;
+  border-inline-start: 1px solid var(--libcal-gantt-bar-label-lines);
+}
+
+.libcal-gantt-home__weekend-hours-venue {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.libcal-gantt-home__weekend-hours-venue--hill {
+  color: var(--libcal-gantt-venue-hill-muted);
+}
+
+.libcal-gantt-home__weekend-hours-venue--main {
+  color: var(--libcal-gantt-venue-main-muted);
+}
+
+.libcal-gantt-home__weekend-hours-venue--online {
+  color: var(--libcal-gantt-venue-online-muted);
+}
+
+.libcal-gantt-home__weekend-hours-venue--other {
+  color: var(--libcal-gantt-venue-other-color);
+}
+
+.libcal-gantt-home__weekend-hours-day {
+  display: inline-flex;
+  align-items: baseline;
+  column-gap: 0.25em;
+  /* A time range must not be split across lines. */
+  white-space: nowrap;
+}
+
+/* The day name is scaffolding, the time is the fact - so the name gives way. */
+.libcal-gantt-home__weekend-hours-day-name {
+  opacity: 0.75;
+}
+
+.libcal-gantt-home__weekend-hours-time {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Closed is real information but never the thing being looked for, so it
+ * recedes instead of competing with an open range on the same line. */
+.libcal-gantt-home__weekend-hours-day.is_closed {
+  opacity: 0.6;
+  font-style: italic;
+}
+
+@container libcal-gantt (max-width: 760px) {
+  /* One venue per row on a phone. The vertical rule goes with it: on a
+   * full-width row it would read as a stray tick rather than a divider. */
+  .libcal-gantt-home__weekend-hours-group {
+    flex-direction: column;
+    row-gap: 0.25em;
+  }
+
+  .libcal-gantt-home__weekend-hours + .libcal-gantt-home__weekend-hours {
+    padding-inline-start: 0;
+    border-inline-start: 0;
+  }
 }
 
 /* ---- Live open/closed footer ---- */
@@ -2299,6 +3018,296 @@ a.libcal-gantt-home__weekend-event:focus {
 }
 
 /* =========================================================================
+   13d. CATEGORY TAGS
+   -------------------------------------------------------------------------
+   LibCal event categories, printed beside the location an event already
+   shows: "Workshop", "Exhibit", "Film Screening". The endpoint sends the
+   names (GanttEventsController::extractCategories()) and three views draw
+   them - the grid bar, the homepage card row and the mobile agenda row.
+
+   All three sets of rules live here rather than in each view's own section
+   because they are one visual language deliberately: a tag has to be
+   recognisable as the same kind of thing whichever view a visitor is
+   reading, and the only differences below are the sizes each view can
+   afford. See "Category tags" in section 1 for why they are hueless.
+
+   Every tag carries `data-category="workshop"` (slugged from the name by
+   categoryKey()), which is the hook for a site that wants one category
+   picked out:
+
+     .libcal-gantt-chart [data-category='workshop'] {
+       --libcal-gantt-tag-color: #fdd023;
+     }
+   ========================================================================= */
+
+/* The shared tag look. Uppercase at a small size with generous tracking,
+   like the venue tag, but a PILL - that shape difference is what separates
+   "what kind of event" from "where it is" when the two sit on one line. */
+.libcal-gantt__bar-tag,
+.libcal-gantt-agenda__tag,
+.libcal-gantt-home__tag {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0 6px;
+  border: 1px solid var(--libcal-gantt-tag-edge);
+  /* 4px, matching .libcal-gantt-home__venue rather than the 999px pill
+     these started as. On a homepage card the category tags are appended
+     into the very same flex line as the venue chip, so two different
+     corner radii sat side by side in one row and read as two unrelated
+     kinds of object. */
+  border-radius: 4px;
+  background: var(--libcal-gantt-tag-bg);
+  color: var(--libcal-gantt-tag-color);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  /* Never wraps: a two-line tag would out-measure the title it belongs to.
+     A tag too long for the space ellipsises, and the full list is in the
+     row's `title` tooltip either way (see categoryTitleSuffix()). */
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* The "+2" overflow tag - a count, not a name, so it drops the tracking
+   that suits a word and leans on its own tooltip instead. */
+.libcal-gantt__bar-tag--more,
+.libcal-gantt-agenda__tag--more,
+.libcal-gantt-home__tag--more {
+  letter-spacing: 0;
+  cursor: help;
+}
+
+/* Tag rows in the two views that give the tags their own line. */
+.libcal-gantt__bar-tags,
+.libcal-gantt-agenda__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+/* Grid bar: the tightest of the three. The bar is as narrow as a fifth of
+   a day column at small container widths, so this view prints one tag
+   (CATEGORY_TAGS_IN_BAR) at the smallest legible size and lets the title
+   keep the room. */
+.libcal-gantt__bar-tags {
+  margin-top: 3px;
+}
+
+.libcal-gantt__bar-tag {
+  font-size: 0.5625rem;
+  line-height: 1.6;
+}
+
+/* An image-backed bar veils its own background, so the tag needs the same
+   text-shadow insurance the rest of the bar text gets (section 9). */
+.libcal-gantt__bar--has-image .libcal-gantt__bar-tag {
+  text-shadow: var(--libcal-gantt-bar-text-shadow);
+}
+
+/* Mobile agenda: a full phone-width line, so tags sit below the title at
+   normal supporting-text size. */
+.libcal-gantt-agenda__tags {
+  margin-top: 0.2rem;
+}
+
+.libcal-gantt-agenda__tag {
+  font-size: 0.6875rem;
+  line-height: 1.7;
+}
+
+/* Homepage cards: appended straight into the location line rather than
+   given a row of their own (see buildHomepageItem()), because "where" and
+   "what kind" are one glance's worth of the same question and a card is a
+   fixed-height slot in a row of five. `em`-sized so it tracks the location
+   line's own 0.74em, and allowed to shrink before the venue tag does -
+   the venue is the tag a visitor navigates by. */
+.libcal-gantt-home__tag {
+  flex: 0 1 auto;
+  font-size: 0.92em;
+  line-height: 1.5;
+  /* MATCHES .libcal-gantt-home__venue, property for property, because on
+     this one view the two chips share a flex line - a category sits
+     directly beside the venue it applies to. The shared tag rule above
+     sets `padding: 0 6px` and `letter-spacing: 0.04em`, which suit the
+     grid bar and the agenda where a tag has no venue chip next to it to be
+     measured against; here they made the category 2px shorter than the
+     venue and, on a baseline-aligned line, sitting a pixel lower with it -
+     close enough to read as a mistake rather than as a distinction. Same
+     padding, same tracking, same 4px radius and weight from the shared
+     rule: colour is left to carry the difference. */
+  padding: 1px 6px;
+  letter-spacing: 0.03em;
+}
+
+/* =========================================================================
+   13e. ITEM BACKGROUND IMAGES
+   -------------------------------------------------------------------------
+   A LibCal "Featured image" washed in behind a LIST ROW - the homepage
+   card items and the mobile agenda rows - added by applyItemImage() in
+   gantt-timeline.js, which sets --libcal-gantt-item-image and the
+   `has-image` class only when an event actually has one. A row without an
+   image is untouched by every rule below.
+
+   This is a different treatment from the grid bar's image (section 9), and
+   the difference is on purpose. A bar is a filled block whose own colour
+   can veil an image behind its text; a list row is transparent, sitting
+   directly on the card, so the image is painted on a ::after LAYER instead
+   and shaped three ways:
+
+     1. `background-blend-mode` is unavailable here (there is no second
+        background layer to blend with), so the layer uses mix-blend-mode
+        and blends with the card behind it. Which mode is right is a
+        function of how light the surface is, and is set per palette by
+        --libcal-gantt-item-image-blend: multiply on the light palette,
+        where it makes the white flyer canvas these images almost always
+        carry disappear into the surface; normal on the dark one, where
+        multiply has no range left to darken into and renders the image
+        invisible. Section 1 has the measurements.
+     2. A mask fades the layer in from left to right - fully transparent at
+        the left edge, reaching full strength at the right - so the time,
+        title, location and tags on the left always sit on clean surface.
+        A second mask layer fades the top and bottom edges as well, so the
+        image has no hard edge of its own on any side.
+        A mask rather than a gradient of surface colour painted on top,
+        because that trick (which section 9 does use) needs to know the
+        colour behind it, and a row's backdrop changes on hover.
+     3. It scales up on hover/focus from the right edge, which is the one
+        piece of movement in the effect and the reason the layer exists as
+        an element rather than as a background on the row itself: a
+        background-image cannot be transformed.
+
+   LAYERING. The obvious `z-index: -1` on the layer is wrong here, and
+   silently so: a negative index is resolved against the nearest ancestor
+   stacking context - which is the chart root, since `container-type` on it
+   applies layout containment - not against the row, so the layer would
+   paint UNDERNEATH the day card's own opaque background and never be seen
+   at all. Instead the layer paints in normal positioned order (above the
+   row's background and its hover fill, which is what it blends with) and
+   the row's two children are lifted to `z-index: 1` above it. That is also
+   why `isolation` is nowhere in these rules: isolating the row would cut
+   the layer off from the card behind it, and the card is precisely what
+   the blend mode needs to blend against.
+   ========================================================================= */
+
+.libcal-gantt-home__link.has-image,
+.libcal-gantt-agenda__link.has-image {
+  position: relative;
+  /* Contains the zoomed layer, which is otherwise 9% larger than the row
+     it belongs to and would bleed over the neighbouring rows' text. */
+  overflow: hidden;
+}
+
+.libcal-gantt-home__link.has-image::after,
+.libcal-gantt-agenda__link.has-image::after {
+  content: '';
+  position: absolute;
+  /* Pinned to the row's RIGHT end rather than stretched across it. A
+     full-width layer had to spend most of its width masked down to nothing
+     anyway, and cropping the flyer to the row's full width meant `cover`
+     scaled it far enough that the visible right end was a featureless
+     slice of the middle. Anchoring it to the right and giving it a width
+     of its own does the "right aligned" half of the effect structurally,
+     and leaves the mask responsible only for the fade. */
+  inset: 0 0 0 auto;
+  width: var(--libcal-gantt-item-image-width, 62%);
+  z-index: 0;
+  background-image: var(--libcal-gantt-item-image);
+  /* Anchored right, and cropped rather than letterboxed: the visible part
+     of the layer is its right end, so that is the part worth filling. */
+  background-position: center right;
+  background-repeat: no-repeat;
+  background-size: cover;
+  opacity: var(--libcal-gantt-item-image-opacity, 0.38);
+  mix-blend-mode: var(--libcal-gantt-item-image-blend, normal);
+  /* The left-to-right fade: transparent at the layer's left edge, full
+     strength at the row's right edge.
+
+     FOUR stops rather than two, because a two-stop linear alpha ramp does
+     not look like a fade. Alpha is perceived roughly as its square root,
+     so a straight line from 0 to 1 appears to arrive almost immediately
+     and then sit flat - which is exactly what "there's no gradient, it's
+     just a panel" describes. Weighting the stops so alpha stays low across
+     the first half and climbs late gives the eye an even ramp.
+
+     Prefixed first for WebKit/Blink versions that only shipped the
+     prefixed property; a browser supporting neither simply shows the
+     unfaded layer at the same low opacity, which is a degraded look rather
+     than a broken one. */
+  -webkit-mask-image:
+    linear-gradient(
+      to right,
+      transparent var(--libcal-gantt-item-image-fade-start, 0%),
+      rgba(0, 0, 0, 0.15) 38%,
+      rgba(0, 0, 0, 0.5) 66%,
+      rgba(0, 0, 0, 0.8) 86%,
+      #000 100%
+    ),
+    linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 var(--libcal-gantt-item-image-soften, 26%),
+      #000 calc(100% - var(--libcal-gantt-item-image-soften, 26%)),
+      transparent 100%
+    );
+  mask-image:
+    linear-gradient(
+      to right,
+      transparent var(--libcal-gantt-item-image-fade-start, 0%),
+      rgba(0, 0, 0, 0.15) 38%,
+      rgba(0, 0, 0, 0.5) 66%,
+      rgba(0, 0, 0, 0.8) 86%,
+      #000 100%
+    ),
+    linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 var(--libcal-gantt-item-image-soften, 26%),
+      #000 calc(100% - var(--libcal-gantt-item-image-soften, 26%)),
+      transparent 100%
+    );
+  /* The two gradients must MULTIPLY, not stack: the default composite for
+     multiple mask layers is `add`, which unions them and would defeat both
+     fades (every pixel either gradient leaves opaque stays opaque).
+     `intersect` takes the lower alpha of the two, giving a corner-to-corner
+     falloff. The -webkit- equivalent of `intersect` is `source-in`, not
+     `intersect`, and it is listed first so the standard property wins where
+     both are understood. A browser that supports neither composite
+     property falls back to the unioned masks - the horizontal fade
+     survives, the edge softening does not, which is a milder look rather
+     than a broken one. */
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+  /* Belt and braces for the same fallback: without it, a browser that
+     ignores mask-composite would also tile the second gradient. */
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  transform-origin: center right;
+  transition: transform var(--libcal-gantt-hover-out) ease-in;
+  /* The row is a link; its image layer is decoration and must never
+     intercept the click. */
+  pointer-events: none;
+}
+
+/* The time column and the body/details column - the row's only two
+   children in both views - lifted above the image layer. Positioned rather
+   than relying on paint order, because an unpositioned in-flow child paints
+   BELOW a positioned pseudo-element regardless of source order. No layout
+   effect: `position: relative` with no offsets moves nothing. */
+.libcal-gantt-home__link.has-image > *,
+.libcal-gantt-agenda__link.has-image > * {
+  position: relative;
+  z-index: 1;
+}
+
+a.libcal-gantt-home__link.has-image:hover::after,
+a.libcal-gantt-home__link.has-image:focus::after,
+a.libcal-gantt-agenda__link.has-image:hover::after,
+a.libcal-gantt-agenda__link.has-image:focus::after {
+  transform: scale(var(--libcal-gantt-item-image-zoom, 1.09));
+  transition-duration: var(--libcal-gantt-hover-in);
+}
+
+/* =========================================================================
    14. RESPONSIVE - VIEWPORT MEDIA QUERIES
    -------------------------------------------------------------------------
    Deliberately kept alongside the container queries in section 15: a
@@ -2366,6 +3375,28 @@ a.libcal-gantt-home__weekend-event:focus {
     transition: none;
   }
 
+  /* The busy spinner stops spinning and pulses in place instead. The
+     overlay still has to say "something is happening" - it is the only
+     signal that a tab switch is in flight - and a slow opacity fade
+     carries that without moving anything on screen. */
+  .libcal-gantt-chart__spinner {
+    animation: libcal-gantt-pulse 1.6s ease-in-out infinite;
+    border-top-color: var(--libcal-gantt-spinner-head);
+  }
+
+  /* The item image's hover zoom is movement for its own sake - the row
+     also brightens and underlines its title on hover, so nothing is lost
+     by dropping it entirely rather than merely making it instant. */
+  .libcal-gantt-home__link.has-image::after,
+  .libcal-gantt-agenda__link.has-image::after,
+  a.libcal-gantt-home__link.has-image:hover::after,
+  a.libcal-gantt-home__link.has-image:focus::after,
+  a.libcal-gantt-agenda__link.has-image:hover::after,
+  a.libcal-gantt-agenda__link.has-image:focus::after {
+    transform: none;
+    transition: none;
+  }
+
   /* Stated at hover-state specificity, or the nudge rules below simply
      out-specify a plain `transform: none` on the arrow and the movement
      happens anyway, just instantly. */
@@ -2424,6 +3455,68 @@ a.libcal-gantt-home__weekend-event:focus {
   .libcal-gantt-home__day + .libcal-gantt-home__day {
     border-left: 0;
     border-top: 1px solid var(--libcal-gantt-border-subtle);
+  }
+
+  /* At one column a span is not a span - it is a list. The
+     lane rows and the cards' pinned `grid-row: 1` both exist to keep the
+     wide layout's spans clear of the cards; in a single-column grid they
+     would stack every card into the same cell and address each bar to a
+     column that does not exist. Auto-placement instead, with the week's
+     displays ordered above the day cards they apply to. */
+  .libcal-gantt-home__days--display-spans {
+    grid-template-rows: none;
+  }
+
+  .libcal-gantt-home__days--display-spans > .libcal-gantt-home__day {
+    grid-row: auto;
+  }
+
+  /* One column, so the strip is a full-width row again and its explicit
+     weekday column means nothing. `order` is what keeps each strip with
+     its own day here: the strips are appended after every card, and
+     auto-placement would otherwise stack all of them at the foot of the
+     band. Cards carry the odd numbers and strips the even ones (see
+     appendHomepageBandHours()), which interleaves them back into
+     day, hours, day, hours - still after the displays, which hold
+     `order: -1`. */
+  .libcal-gantt-home__days--display-spans > .libcal-gantt-home__day,
+  .libcal-gantt-home__days--display-spans > .libcal-gantt-home__day-hours--lane {
+    order: var(--libcal-gantt-day-order, 0);
+  }
+
+  /* Double class to match the desktop rule it is overriding, which had to
+     take a second class to outrank the in-card bleed. A single-class
+     selector here would no longer beat it, and the strips would keep the
+     weekday column and reserved row they are given on the desktop grid -
+     stacked on top of each other in column one of a single-column band. */
+  .libcal-gantt-home__day-hours.libcal-gantt-home__day-hours--lane {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    border-left: 0;
+  }
+
+  .libcal-gantt-home__day-hours--lane + .libcal-gantt-home__day-hours--lane {
+    border-left: 0;
+  }
+
+  .libcal-gantt-home__item--span {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    order: -1;
+    margin: 0;
+    border-top: 1px solid var(--libcal-gantt-border-subtle);
+    border-bottom: 1px solid var(--libcal-gantt-border-subtle);
+    padding: 0.5rem 0.75rem;
+  }
+
+  .libcal-gantt-home__item--span + .libcal-gantt-home__item--span {
+    border-top: 0;
+  }
+
+  .libcal-gantt-home__display-empty {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    order: -1;
   }
 }
 

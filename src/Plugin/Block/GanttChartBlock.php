@@ -43,6 +43,22 @@ use Drupal\Core\Url;
 class GanttChartBlock extends BlockBase {
 
   /**
+   * TEMPORARY stand-in target for the "Full calendar" link.
+   *
+   * Used only when a placement's own "Full calendar URL" is blank, so
+   * anything configured in the block form still wins. Applied at build
+   * time rather than in defaultConfiguration(), because defaults are read
+   * only when a block is FIRST placed: an existing placement already has
+   * an empty string saved against this key, and a new default would never
+   * be consulted for it.
+   *
+   * To retire this, delete the constant and restore the plain
+   * `$config['full_calendar_url'] !== ''` test in build(). Two lines, one
+   * place.
+   */
+  const TEMPORARY_FULL_CALENDAR_URL = 'https://lsu.libcal.com/calendar/eventsandprogramming?cid=-1&t=m&d=0000-00-00&cal=-1&inc=0';
+
+  /**
    * {@inheritdoc}
    *
    * Chosen so that an EXISTING placement, which has none of these keys
@@ -114,7 +130,7 @@ class GanttChartBlock extends BlockBase {
       '#title' => $this->t('Full calendar URL'),
       '#default_value' => $config['full_calendar_url'],
       '#maxlength' => 255,
-      '#description' => $this->t('Target of the "Full calendar" link, e.g. /events or https://lib.lsu.edu/events. Leave empty to omit the link rather than render one that goes nowhere.'),
+      '#description' => $this->t('Target of the "Full calendar" link, e.g. /events or https://lib.lsu.edu/events. Temporarily, leaving this empty falls back to the LibCal events and programming calendar rather than omitting the link.'),
     ];
 
     $form['appearance'] = [
@@ -205,8 +221,14 @@ class GanttChartBlock extends BlockBase {
       if ($config['chart_title'] !== '') {
         $attributes['data-chart-title'] = $config['chart_title'];
       }
-      if ($config['full_calendar_url'] !== '') {
-        $attributes['data-full-calendar-url'] = $config['full_calendar_url'];
+      // TEMPORARY: falls back to TEMPORARY_FULL_CALENDAR_URL while the
+      // real destination is being decided. A URL entered in the block form
+      // still takes precedence; only a blank one picks up the stand-in.
+      $fullCalendarUrl = $config['full_calendar_url'] !== ''
+        ? $config['full_calendar_url']
+        : self::TEMPORARY_FULL_CALENDAR_URL;
+      if ($fullCalendarUrl !== '') {
+        $attributes['data-full-calendar-url'] = $fullCalendarUrl;
       }
     }
 
