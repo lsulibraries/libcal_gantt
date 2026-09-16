@@ -187,6 +187,67 @@ class SettingsForm extends ConfigFormBase {
       '#description' => $this->t('Hours change far less often than events, so this defaults to a much longer cache than the events cache above.'),
     ];
 
+    $form['weather'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Daily weather (optional)'),
+      '#description' => $this->t('Adds one forecast line to each day in the homepage strip, under that day\'s building hours. Data comes from the National Weather Service (api.weather.gov), which needs no API key. Off by default; a forecast never delays or blocks the events feed - if the request fails the line is simply not rendered.'),
+    ];
+
+    $form['weather']['show_weather'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Show a daily forecast in the homepage hours strip'),
+      '#default_value' => (bool) $config->get('show_weather'),
+      '#description' => $this->t('Only the first three days of the current window are ever given a forecast, and only on the initial view - not on days revealed by "Show more", where the forecast would be too far out to trust.'),
+    ];
+
+    // NWS has no ZIP or place lookup - a coordinate is the only thing its
+    // API accepts. Typed in once rather than geocoded, since geocoding would
+    // add a second external dependency to resolve an address that does not
+    // move. One point covers every location in the chart; buildings a few
+    // blocks apart share a forecast grid.
+    $form['weather']['weather_lat'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Latitude'),
+      '#default_value' => (string) $config->get('weather_lat'),
+      '#size' => 16,
+      '#description' => $this->t('Decimal degrees, e.g. 30.4133. Use one point near your buildings - not a ZIP code, which this API does not accept.'),
+      '#states' => [
+        'visible' => [':input[name="show_weather"]' => ['checked' => TRUE]],
+      ],
+    ];
+
+    $form['weather']['weather_lon'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Longitude'),
+      '#default_value' => (string) $config->get('weather_lon'),
+      '#size' => 16,
+      '#description' => $this->t('Decimal degrees, negative in the Americas, e.g. -91.1800.'),
+      '#states' => [
+        'visible' => [':input[name="show_weather"]' => ['checked' => TRUE]],
+      ],
+    ];
+
+    $form['weather']['weather_contact'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Contact address for the weather API'),
+      '#default_value' => (string) $config->get('weather_contact'),
+      '#description' => $this->t('The National Weather Service asks every caller to identify itself with a contact address and refuses requests that do not. Defaults to this site\'s email address if left blank. A missing or rejected contact is the most common reason a correctly configured forecast still shows nothing.'),
+      '#states' => [
+        'visible' => [':input[name="show_weather"]' => ['checked' => TRUE]],
+      ],
+    ];
+
+    $form['weather']['weather_cache_ttl'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Weather cache lifetime (seconds)'),
+      '#default_value' => $config->get('weather_cache_ttl') ?: 1800,
+      '#min' => 300,
+      '#description' => $this->t('A forecast is only revised a few times a day, so there is nothing to gain from fetching it more often than this. The coordinate-to-forecast-grid lookup is cached separately for a month, since it only changes if the weather service redraws its grid.'),
+      '#states' => [
+        'visible' => [':input[name="show_weather"]' => ['checked' => TRUE]],
+      ],
+    ];
+
     $form['advanced'] = [
       '#type' => 'details',
       '#title' => $this->t('Advanced'),
@@ -210,6 +271,38 @@ class SettingsForm extends ConfigFormBase {
     return parent::buildForm($form, $form_state);
   }
 
+  /**
+   * Rejects coordinates the weather API would answer for but shouldn't.
+   *
+   * Validated here rather than left to WeatherClient, which can only fail
+   * silently: without this, a transposed pair or a stray character is
+   * indistinguishable, on the front end, from an API outage - the row just
+   * never appears and there is nothing to look at. An out-of-range or
+   * non-numeric value is caught, and so is enabling the feature with no
+   * coordinate at all.
+   */
+  public function validateForm(array &$form, FormStateInterface $form_state): void {
+    parent::validateForm($form, $form_state);
+
+    if (!$form_state->getValue('show_weather')) {
+      return;
+    }
+
+    foreach (['weather_lat' => 90, 'weather_lon' => 180] as $key => $limit) {
+      $raw = trim((string) $form_state->getValue($key));
+      if ($raw === '') {
+        $form_state->setErrorByName($key, $this->t('A latitude and longitude are both required to show the weather, since the National Weather Service API has no ZIP code or place lookup.'));
+        continue;
+      }
+      if (!is_numeric($raw) || abs((float) $raw) > $limit) {
+        $form_state->setErrorByName($key, $this->t('@field must be a number between -@limit and @limit, in decimal degrees.', [
+          '@field' => $form['weather'][$key]['#title'],
+          '@limit' => $limit,
+        ]));
+      }
+    }
+  }
+
   public function submitForm(array &$form, FormStateInterface $form_state): void {
     $config = $this->config('libcal_gantt.settings');
 
@@ -225,7 +318,15 @@ class SettingsForm extends ConfigFormBase {
       ->set('hours_cache_ttl', (int) $form_state->getValue('hours_cache_ttl'))
       ->set('campus_rows', (string) $form_state->getValue('campus_rows'))
       ->set('online_row_label', trim((string) $form_state->getValue('online_row_label')))
-      ->set('online_location_keywords', (string) $form_state->getValue('online_location_keywords'));
+      ->set('online_location_keywords', (string) $form_state->getValue('online_location_keywords'))
+      ->set('show_weather', (bool) $form_state->getValue('show_weather'))
+      // Saved as trimmed strings, not cast to float, so an unset coordinate
+      // stays empty rather than becoming 0.0 - see the note in
+      // libcal_gantt.schema.yml.
+      ->set('weather_lat', trim((string) $form_state->getValue('weather_lat')))
+      ->set('weather_lon', trim((string) $form_state->getValue('weather_lon')))
+      ->set('weather_contact', trim((string) $form_state->getValue('weather_contact')))
+      ->set('weather_cache_ttl', (int) $form_state->getValue('weather_cache_ttl'));
 
     // Only the per-row URL fields that were actually rendered (i.e. rows
     // currently in "Location rows") are in $form_state - trim and drop

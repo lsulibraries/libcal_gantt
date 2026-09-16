@@ -1479,11 +1479,16 @@ a.libcal-gantt__weekend-event:focus {
 .libcal-gantt-agenda__hours.now_closed::after {
   content: '';
   display: inline-block;
-  width: 0.5em;
-  height: 0.5em;
+  width: 0.62em;
+  height: 0.62em;
   margin-left: 0.5em;
   border-radius: 50%;
   vertical-align: middle;
+  /* Stated on the dot itself rather than relying on the module's box-model
+     reset, which is scoped to `.libcal-gantt-chart`: the ring must keep the
+     SAME outer diameter as the filled dot, so the two states line up in a
+     column and differ only in fill. */
+  box-sizing: border-box;
 }
 
 .now_open::after {
@@ -1495,10 +1500,18 @@ a.libcal-gantt__weekend-event:focus {
    (the most common form, and roughly one man in twelve), so a dot that
    differed by colour alone carried no information at all for those
    readers. Filled-versus-ring survives that, greyscale printing, and a
-   theme override of either colour token. */
+   theme override of either colour token.
+
+   A ring only reads as a ring if the HOLE is the dominant part of it. At
+   the previous 0.5em dot with a 0.15em border the hole was 0.2em - about
+   two or three pixels at body size - so this rendered as a slightly dark
+   solid dot and the shape cue was lost for precisely the readers it was
+   added for. The ring is now a fifth of the diameter, leaving a hole about
+   58% of it. Keep the hole above roughly half the diameter if either
+   number is ever revisited; the CSS tests assert this. */
 .now_closed::after {
   background: none;
-  border: 0.15em solid var(--libcal-gantt-closed-color);
+  border: 0.13em solid var(--libcal-gantt-closed-color);
 }
 
 /* =========================================================================
@@ -2035,6 +2048,35 @@ a.libcal-gantt-agenda__link:focus {
   text-transform: uppercase;
 }
 
+/* Visually hidden, still announced. The first band's heading is redundant
+   on screen - the today card beside it is outlined and badged - but it is
+   the accessible name of that band's group and the block's only h3, so it
+   has to stay in the accessibility tree. See startBand() for why only the
+   first one.
+
+   Not `display: none` and not `visibility: hidden`: both of those take the
+   element out of the accessibility tree too, which would leave a
+   role="group" with no name. This is the standard clip pattern, spelled out
+   here rather than borrowed from the theme so the block does not depend on
+   a `visually-hidden` class it cannot guarantee is present.
+
+   Taking it out of flow also cleans up after itself: `.libcal-gantt-home__bands`
+   draws its hairlines with `gap` over a background, so an in-flow hidden
+   heading would still reserve a gap and leave a stray 1px rule across the
+   top of the block. */
+.libcal-gantt-home__week-heading--offscreen {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  border: 0;
+  white-space: nowrap;
+}
+
 .libcal-gantt-home__reveal {
   display: flex;
   justify-content: center;
@@ -2117,7 +2159,7 @@ a.libcal-gantt-agenda__link:focus {
    escape from, so those margins would just pull it out of alignment.
 
    DOUBLE CLASS, and not for show. `.libcal-gantt-home__day-hours` sets that
-   bleed (`width: calc(100% + 28px)`, `margin: auto -14px -12px`) and is
+   bleed (a `width` and `margin` sized from `--libcal-gantt-day-pad-x/y`) and is
    declared LATER in this file, in the day-card section. At equal
    specificity the later rule wins, so a single-class version of this
    selector lost the width and margins it is here to reset: every lane cell
@@ -2261,7 +2303,17 @@ a.libcal-gantt-agenda__link:focus {
      drawn-out empty rectangle on a quiet day - the busiest column sets
      the height and the emptiest one advertises it. Undrawn, the same
      unused space is just banner, and only the hairline gap is visible. */
-  padding: 12px 14px;
+
+  /* ONE NUMBER, THREE USERS: the card's own inset, the negative margins the
+     hours footer bleeds its background out with, and the ones the event
+     rows use to do the same (section 13e-bis). All three have to be the
+     same measurement or a bleed lands short of the edge, leaving a strip of
+     bare surface that reads as a mis-sized panel. Named so each bleed can
+     say what it means instead of repeating a literal nobody would think to
+     come back here and update. */
+  --libcal-gantt-day-pad-x: 14px;
+  --libcal-gantt-day-pad-y: 12px;
+  padding: var(--libcal-gantt-day-pad-y) var(--libcal-gantt-day-pad-x);
   background: var(--libcal-gantt-block-bg);
 
   /* Its own container, so the date in the head can respond to how wide
@@ -2449,6 +2501,43 @@ a.libcal-gantt-agenda__link:focus {
    not a row in this list. */
 .libcal-gantt-home__list .libcal-gantt-home__link {
   padding-block: 9px;
+
+  /* FULL-BLEED ROW, TEXT UNMOVED. The negative margin grows the row's box
+     out to the card's padding box on both sides; the matching padding puts
+     the content back exactly where it was, so nothing in the row shifts by
+     a pixel and no line rewraps.
+
+     This is here for the featured-image layer (section 13e). That layer is
+     pinned to the row's right end and its mask reaches FULL strength
+     precisely there, so the row's right edge is the one place in the effect
+     that has a hard edge of its own - and inset 14px from the card, that
+     cut landed in open surface with a bare strip beside it, which reads as
+     a mis-sized panel rather than as a crop. Bled, the cut coincides with
+     the card's own boundary, where a cut is what the eye already expects.
+
+     WHY THE ROW AND NOT THE LAYER. Widening the pseudo-element alone does
+     nothing: `overflow: hidden` on the row (which contains the hover zoom)
+     clips it back to the row's box. The other way to let it escape -
+     `clip-path` with a negative inset - clips the row's own focus ring
+     along with it, and the row is a link, so that is a keyboard user's only
+     indication of where they are. Moving the row's box takes its clip with
+     it and leaves the focus ring alone.
+
+     WHY BOTH SIDES. The row's background is the hover fill, so a
+     right-only bleed would make every hover a visibly lopsided panel.
+     Bled both ways the highlight spans the card like a table row, which is
+     what it already looks like it is trying to be.
+
+     Horizontal only. Vertically the same layer fades to nothing at its own
+     top and bottom edges (`--libcal-gantt-item-image-soften`), so there is
+     no hard edge up there to rescue - and a vertical bleed would push each
+     image into the hairline above it and into its neighbour's text.
+
+     The hairlines stay inset, on the <li>. That is deliberate and the list
+     border comment above explains it: bled at both ends they would frame
+     the body and undo the point of an unbordered card. */
+  margin-inline: calc(-1 * var(--libcal-gantt-day-pad-x, 14px));
+  padding-inline: var(--libcal-gantt-day-pad-x, 14px);
 }
 
 a.libcal-gantt-home__link:hover,
@@ -2613,9 +2702,17 @@ a.libcal-gantt-home__link:focus .libcal-gantt-home__item-title {
      that extra height to pin this status band to the bottom of every card,
      while the negative margins let its background bleed to the card edges. */
   flex: 0 0 auto;
-  width: calc(100% + 28px);
-  margin: auto -14px -12px;
-  padding: 8px 14px;
+  /* Fallbacks are load-bearing: the LANE form of this strip is a
+     band-level grid cell rather than a child of a card, so it inherits none
+     of the card's variables. It resets the width and margins anyway, but
+     its padding - the 14px that keeps a band-level strip aligned with the
+     card text above it - comes from here. */
+  width: calc(100% + var(--libcal-gantt-day-pad-x, 14px) * 2);
+  margin:
+    auto
+    calc(-1 * var(--libcal-gantt-day-pad-x, 14px))
+    calc(-1 * var(--libcal-gantt-day-pad-y, 12px));
+  padding: 8px var(--libcal-gantt-day-pad-x, 14px);
   border-top: 1px solid var(--libcal-gantt-border);
   background: var(--libcal-gantt-header-bg);
   color: var(--libcal-gantt-text-subtle);
@@ -2695,6 +2792,84 @@ a.libcal-gantt-home__link:focus .libcal-gantt-home__item-title {
      buried in a sentence. */
   color: var(--libcal-gantt-text);
   font-variant-numeric: tabular-nums;
+}
+
+/* ---- Weather row ---- */
+
+/* THE SAME SHAPE AS AN HOURS ROW ABOVE IT - label-ish thing left, number
+   pushed right - because read down the week this is a column too, and a
+   column only reads as one when every cell is aligned the same way. Not a
+   band of its own: the forecast answers the same question the hours do
+   (what is this day like), and a second band would have to compete with the
+   weekend strip for the space under the cards. */
+.libcal-gantt-home__day-weather {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  column-gap: 0.7em;
+  /* Held one step back from the hours: this is nice-to-know, and it must
+     never read as an advisory about whether the buildings are open. */
+  color: var(--libcal-gantt-text-subtle);
+}
+
+/* The separator only exists when there is something above it to separate
+   from. Adjacent sibling rather than a class set in JS, so a day whose
+   hours feed came back empty shows its forecast with no orphan rule
+   floating above it. Dotted, not solid - the solid rule at the top of the
+   strip divides the day from its facts; this one divides two kinds of fact,
+   and a second solid line would make the forecast look like a third
+   building. */
+.libcal-gantt-home__hours-row + .libcal-gantt-home__day-weather {
+  margin-top: 4px;
+  padding-top: 5px;
+  border-top: 1px dotted var(--libcal-gantt-border);
+}
+
+.libcal-gantt-home__weather-summary {
+  display: flex;
+  /* center, not baseline: the icon is a square box with no text baseline of
+     its own, so baseline alignment would hang it off the bottom of the
+     line. */
+  align-items: center;
+  gap: 0.35em;
+  /* Lets the condition text shrink and ellipsis instead of pushing the
+     temperatures off the row. */
+  min-width: 0;
+}
+
+.libcal-gantt-home__weather-icon {
+  flex: 0 0 auto;
+  width: 1.15em;
+  height: 1.15em;
+  /* Dimmer than the text it sits beside. The icon repeats what the sentence
+     already says, so it should be the quieter of the two. */
+  opacity: 0.75;
+}
+
+.libcal-gantt-home__weather-cond {
+  min-width: 0;
+  overflow: hidden;
+  /* Gives way before the temperatures do - "60% rain from ~3 PM" losing its
+     tail is survivable, a wrapped forecast row breaking the column
+     alignment down the week is not. */
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.libcal-gantt-home__weather-temp {
+  flex: 0 0 auto;
+  /* Lands in the same right-hand column as the hours times above, and
+     aligns digit-for-digit with them down the week. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* The high at full text strength, the low left at the row's muted colour:
+   two numbers of equal weight read as a range to be decoded, and the high
+   is the one people actually use. */
+.libcal-gantt-home__weather-high {
+  color: var(--libcal-gantt-text);
+  font-weight: 600;
 }
 
 /* ---- Weekend strip ---- */
@@ -2883,8 +3058,14 @@ a.libcal-gantt-home__weekend-event:focus {
 }
 
 .libcal-gantt-home__status-dot {
-  width: 8px;
-  height: 8px;
+  /* 10px rather than 8: at 8px a 2px ring left a 4px hole, which is small
+     enough to close up visually against a dark panel. 10px keeps the ring
+     at 2px while giving a 6px hole - the same filled-versus-ring contrast
+     the legend swatch teaches. */
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: currentColor;
 }
@@ -2999,6 +3180,7 @@ a.libcal-gantt-home__weekend-event:focus {
    is the one that wants no border - the closed swatch IS a border. */
 .libcal-gantt-legend__swatch--open,
 .libcal-gantt-legend__swatch--closed {
+  box-sizing: border-box;
   width: 10px;
   height: 10px;
   border-radius: 50%;

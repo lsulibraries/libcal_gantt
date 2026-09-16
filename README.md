@@ -160,6 +160,14 @@ Go to **Admin > Configuration > Web services > LibCal Gantt Timeline**
 - **Hours feed URL** *(optional)*, plus a feed URL and **Location ID (lid)**
   per row, to show open/close captions. See
   [docs/building-hours.md](docs/building-hours.md).
+- **Daily weather** *(optional, off by default)* — adds one forecast line per
+  day to the homepage hours strip, from the National Weather Service
+  (`api.weather.gov`; no API key). Needs a **latitude** and **longitude** in
+  decimal degrees — the API has no ZIP or place lookup — plus a **contact
+  address**, which NWS requires of every caller and which defaults to the site
+  email. Only the first three days of the initial view ever carry a forecast,
+  and only today and tomorrow carry a start time. A failed or unconfigured
+  forecast renders nothing and never delays the events feed.
 
 Then place the **"LibCal Events Gantt Chart"** block (Admin > Structure >
 Block layout) into a region of your theme. The block fetches and renders the

@@ -52,3 +52,47 @@ function libcal_gantt_update_10001(): string {
     implode(', ', $removed)
   );
 }
+
+/**
+ * Adds the optional daily weather settings.
+ *
+ * Seeds the keys the forecast row reads on sites that installed before it
+ * existed, so saved config matches the schema and the settings form has
+ * defaults to render.
+ *
+ * Deliberately arrives switched OFF with no coordinate. Enabling a feature
+ * that starts calling an external API is not a decision an update hook gets
+ * to make on a site's behalf during a database update, and there is no
+ * sensible coordinate to guess. Existing values are never overwritten, so
+ * re-running this cannot clobber a configured location.
+ */
+function libcal_gantt_update_10002(): string {
+  $config = \Drupal::configFactory()->getEditable('libcal_gantt.settings');
+
+  $defaults = [
+    'show_weather' => FALSE,
+    'weather_lat' => '',
+    'weather_lon' => '',
+    'weather_contact' => '',
+    'weather_cache_ttl' => 1800,
+  ];
+
+  $added = [];
+  foreach ($defaults as $key => $value) {
+    if ($config->get($key) === NULL) {
+      $added[] = $key;
+      $config->set($key, $value);
+    }
+  }
+
+  if (!$added) {
+    return 'Weather settings were already present; nothing to add.';
+  }
+
+  $config->save(TRUE);
+
+  return sprintf(
+    'Added weather setting(s): %s. The daily forecast row stays off until a latitude and longitude are set on the module settings form.',
+    implode(', ', $added)
+  );
+}

@@ -11,3 +11,16 @@ services:
       - '@cache.default'
       - '@datetime.time'
       - '@logger.channel.libcal_gantt'
+
+  # Same five dependencies as the LibCal client, on purpose: the forecast is
+  # fetched, cached and logged exactly like the Hours feed, just against a
+  # different host. It shares the logger channel too, so a weather failure
+  # shows up in the same place an events failure does.
+  libcal_gantt.weather:
+    class: Drupal\libcal_gantt\Service\WeatherClient
+    arguments:
+      - '@http_client'
+      - '@config.factory'
+      - '@cache.default'
+      - '@datetime.time'
+      - '@logger.channel.libcal_gantt'

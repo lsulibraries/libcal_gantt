@@ -7,6 +7,7 @@ namespace Drupal\libcal_gantt\Controller;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\libcal_gantt\Service\LibCalClient;
+use Drupal\libcal_gantt\Service\WeatherClient;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -21,15 +22,27 @@ use Symfony\Component\HttpFoundation\Request;
  */
 class GanttEventsController extends ControllerBase {
 
+  /**
+   * How many days of the window may carry a forecast.
+   *
+   * Three, matching the homepage block's default `homepage_days` - the days
+   * a visitor sees before pressing "Show more". Beyond that a forecast is
+   * both unreliable and unasked for: nobody decides on Wednesday whether to
+   * bring an umbrella on Monday.
+   */
+  protected const WEATHER_DAYS = 3;
+
   public function __construct(
     protected readonly LibCalClient $libcalClient,
     protected readonly TimeInterface $time,
+    protected readonly WeatherClient $weatherClient,
   ) {}
 
   public static function create(ContainerInterface $container): static {
     return new static(
       $container->get('libcal_gantt.client'),
       $container->get('datetime.time'),
+      $container->get('libcal_gantt.weather'),
     );
   }
 
@@ -207,6 +220,26 @@ class GanttEventsController extends ControllerBase {
     }
     unset($weekend);
 
+    // ONE FORECAST FOR THE WHOLE CHART, keyed by day rather than by row:
+    // every location in it is close enough to share a forecast grid, so a
+    // per-row forecast would be the same numbers repeated per building.
+    //
+    // Only on the unpaged view, and only its first days. offset > 0 means
+    // the visitor has paged forward past today, where a forecast would
+    // either be missing (NWS covers about a week) or too far out to print
+    // beside library hours. Weather is also included in the payload
+    // regardless of render mode - the homepage strip is the only thing that
+    // currently draws it, but the endpoint stays mode-agnostic, exactly as
+    // it already is for weekend markers the grid uses and the homepage
+    // doesn't.
+    //
+    // WeatherClient swallows its own failures and returns [] - a forecast
+    // must never be able to delay or break the events feed, which is what
+    // this endpoint is actually for.
+    $weather = $offset === 0
+      ? $this->weatherClient->getForecast(array_slice($days, 0, self::WEATHER_DAYS), $timezone)
+      : [];
+
     $response = new JsonResponse([
       'days' => $days,
       'rows' => $rowLabels,
@@ -214,6 +247,7 @@ class GanttEventsController extends ControllerBase {
       'hours' => $hours,
       'weekends' => $weekends,
       'weekendHours' => $weekendHours,
+      'weather' => $weather,
       'calendars' => $calendarList,
       'calendar' => $selectedCalendarKey,
       'offset' => $offset,

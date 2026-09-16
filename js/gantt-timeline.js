@@ -58,6 +58,19 @@
   const LIVE_REFRESH_INTERVAL_MS = 60000;
 
   /**
+   * Below this precipitation chance the forecast row drops the percentage
+   * and just names the condition. A row reading "0% rain" every day teaches
+   * people to stop reading the strip, which costs the building hours
+   * sitting directly above it.
+   *
+   * Mirrors WeatherClient::POP_THRESHOLD, which uses the same number to
+   * decide whether an onset time is worth computing at all.
+   */
+  const WEATHER_POP_THRESHOLD = 30;
+
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+
+  /**
    * How many LibCal category tags one event prints before the rest are
    * collapsed into a "+N" tag (see appendCategoryTags()).
    *
@@ -300,6 +313,12 @@
       // divider (buildAgenda()).
       weekends: [],
       weekendHours: {},
+      // One forecast per DAY, not per row - every location in the chart is
+      // close enough to share one (see GanttEventsController's
+      // WEATHER_DAYS). Empty whenever the feature is off, unconfigured,
+      // paged past today, or the weather service didn't answer; all four
+      // look the same here on purpose, since all four render nothing.
+      weather: {},
     };
 
     loadPage(container, endpoint, state, true);
@@ -782,6 +801,7 @@
     state.hours = {};
     state.weekends = [];
     state.weekendHours = {};
+    state.weather = {};
     state.agendaVisibleDayCount = null;
   }
 
@@ -850,6 +870,14 @@
         }
         Object.assign(state.weekendHours[rowLabel], data.weekendHours[rowLabel]);
       });
+    }
+
+    // Weather is a flat day => summary map, so it merges in one assign
+    // rather than per row. Later pages carry no weather at all (the server
+    // only forecasts the unpaged window), and an absent key must not wipe
+    // what the first page already delivered - so this only ever adds.
+    if (data.weather && typeof data.weather === 'object') {
+      Object.assign(state.weather, data.weather);
     }
   }
 
@@ -1074,10 +1102,36 @@
 
     let band = null;
     let bandDays = [];
+    // THE FIRST BAND'S HEADING IS HIDDEN FROM SIGHT, NOT FROM THE PAGE.
+    //
+    // It is the one heading nobody asked for: it renders on load, directly
+    // under the block's own header, and says "Week of Sep 15" above a row
+    // of cards whose first card is already outlined, badged "Today" and
+    // marked aria-current. Two labels for one week, and the redundant one
+    // is on top - so it reads as a second header stacked on a header and
+    // pushes the cards further down the scarcest space on the homepage.
+    //
+    // Every LATER heading earns its keep, which is why this is not a rule
+    // about week headings in general: those appear only after Show more,
+    // where they are the separator that tells you the run of cards you were
+    // reading has ended and a new week has started. Hiding those would
+    // leave a continuous strip of twelve cards with nothing to break it.
+    //
+    // Kept in the DOM rather than skipped, because it is doing two jobs
+    // that have nothing to do with being seen: it is the accessible name of
+    // this band's role="group" (aria-labelledby, below - a named group is
+    // how a screen reader user can skip a week they do not care about), and
+    // it is this block's only h3, so removing it would leave the day cards
+    // hanging off the block heading with a level missing from the outline.
+    let bandsStarted = 0;
     const startBand = (firstDay) => {
       bandDays = [firstDay];
       const weekHeading = document.createElement('h3');
       weekHeading.className = 'libcal-gantt-home__week-heading';
+      if (bandsStarted === 0) {
+        weekHeading.classList.add('libcal-gantt-home__week-heading--offscreen');
+      }
+      bandsStarted += 1;
       weekHeading.id = state.instanceId + '-week-' + firstDay;
       weekHeading.textContent = Drupal.t('Week of @date', {
         '@date': formatDayLabel(firstDay, true),
@@ -1610,7 +1664,11 @@
         });
       }
     });
-    if (!rows.length) {
+    // The forecast is built BEFORE the early return, so a day whose hours
+    // feed came back empty still gets its strip if there's weather to put
+    // in it - and a day with neither still gets no strip at all.
+    const weatherRow = buildHomepageWeatherRow(day, state);
+    if (!rows.length && !weatherRow) {
       return null;
     }
     const line = document.createElement('footer');
@@ -1636,7 +1694,215 @@
       wrap.appendChild(time);
       line.appendChild(wrap);
     });
+    // ONE MORE ROW IN THIS STRIP, not a band of its own. The forecast
+    // belongs to the same question the hours answer - what is this day
+    // like - and read down the week it has to be a column like they are,
+    // which only works if it sits at the same place in every card. Its
+    // separator rule is CSS's job, not a class set here: the dotted line
+    // above it is drawn by an adjacent-sibling selector, so it appears only
+    // when there are hours rows above it to be separated from.
+    if (weatherRow) {
+      line.appendChild(weatherRow);
+    }
     return line;
+  }
+
+  /**
+   * Builds one day's forecast row: condition on the left, temperatures
+   * pushed to the right edge, matching the venue/hours rows above it.
+   *
+   * Returns null - drawing nothing at all - whenever there is no summary
+   * for the day. A silent absence is the intended failure mode for every
+   * reason there might not be one (feature off, no coordinate configured,
+   * a day too far out to forecast, the weather service down), because a
+   * placeholder here would be a claim about the weather.
+   */
+  function buildHomepageWeatherRow(day, state) {
+    const entry = state.weather && state.weather[day];
+    if (!entry) {
+      return null;
+    }
+
+    const summary = describeWeather(entry);
+    const hasHigh = typeof entry.high === 'number';
+    const hasLow = typeof entry.low === 'number';
+    if (!summary && !hasHigh && !hasLow) {
+      return null;
+    }
+
+    const row = document.createElement('div');
+    row.className = 'libcal-gantt-home__day-weather';
+
+    const left = document.createElement('span');
+    left.className = 'libcal-gantt-home__weather-summary';
+    const icon = buildWeatherIcon(entry.icon);
+    if (icon) {
+      left.appendChild(icon);
+    }
+    if (summary) {
+      const text = document.createElement('span');
+      text.className = 'libcal-gantt-home__weather-cond';
+      text.textContent = summary;
+      left.appendChild(text);
+    }
+    row.appendChild(left);
+
+    if (hasHigh || hasLow) {
+      const temps = document.createElement('span');
+      temps.className = 'libcal-gantt-home__weather-temp';
+      // The high carries full strength and the low is held back, because
+      // the high is the number anyone actually uses. Both are plain text in
+      // one element - no separate spans to align, since these ride the same
+      // tabular-nums column the hours use.
+      if (hasHigh) {
+        const high = document.createElement('span');
+        high.className = 'libcal-gantt-home__weather-high';
+        high.textContent = formatTemperature(entry.high);
+        temps.appendChild(high);
+      }
+      if (hasLow) {
+        const low = document.createElement('span');
+        low.className = 'libcal-gantt-home__weather-low';
+        // The slash belongs to the pair, so it only exists when there are
+        // two numbers - after about 6 PM the weather service stops
+        // publishing today's high and this reads "61\u00b0" alone.
+        low.textContent = (hasHigh ? '/' : '') + formatTemperature(entry.low);
+        temps.appendChild(low);
+      }
+      row.appendChild(temps);
+    }
+
+    return row;
+  }
+
+  /**
+   * Turns a forecast summary into the one short line the strip has room
+   * for, precipitation first.
+   *
+   * Precipitation is what changes a decision - whether to walk over, and
+   * whether an outdoor table happens - so it outranks the condition text
+   * whenever it is high enough to mention. Below the threshold the
+   * percentage is dropped entirely rather than printed as a reassuring 10%,
+   * and the weather service's own words are used instead.
+   *
+   * "From ~3 PM" is only ever built from a start hour the server chose to
+   * send; it withholds one past tomorrow, and for a day that is wet
+   * throughout rather than from a point in it (see WeatherClient::onset()).
+   * This function never infers a time.
+   */
+  function describeWeather(entry) {
+    const pop = typeof entry.pop === 'number' ? Math.round(entry.pop) : null;
+    const condition = String(entry.condition || '');
+
+    if (pop === null || pop < WEATHER_POP_THRESHOLD) {
+      return condition;
+    }
+
+    // Only rain and thunderstorms get the spelled-out phrasing. Anything
+    // else keeps the weather service's own condition text beside the
+    // number rather than having a noun invented for it here.
+    const isRain = entry.icon === 'rain' || entry.icon === 'storm';
+    if (!isRain) {
+      return condition
+        ? Drupal.t('@pop% @condition', { '@pop': pop, '@condition': condition.toLowerCase() })
+        : Drupal.t('@pop% chance of precipitation', { '@pop': pop });
+    }
+
+    if (typeof entry.startHour === 'number') {
+      return Drupal.t('@pop% rain from ~@time', {
+        '@pop': pop,
+        // The same formatter the hours row uses, so "3 PM" here and "7 AM"
+        // above are the same shape.
+        '@time': formatCompactHourFraction(entry.startHour),
+      });
+    }
+    if (entry.sustained) {
+      return Drupal.t('@pop% rain most of the day', { '@pop': pop });
+    }
+
+    return Drupal.t('@pop% chance of rain', { '@pop': pop });
+  }
+
+  function formatTemperature(value) {
+    return Math.round(value) + '\u00b0';
+  }
+
+  /**
+   * Condition icons, as path data keyed by the buckets
+   * WeatherClient::iconKey() sorts the forecast text into.
+   *
+   * Inline SVG rather than an emoji glyph: an emoji ignores the theme's
+   * colour tokens, renders differently on every platform, and is announced
+   * awkwardly by screen readers. These inherit currentColor and are
+   * aria-hidden - the sentence beside them carries the meaning, so nothing
+   * here is the only way to learn anything.
+   */
+  const WEATHER_ICON_PATHS = {
+    sun: [
+      'M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z',
+      'M12 2.6v2.1M12 19.3v2.1M2.6 12h2.1M19.3 12h2.1M5.4 5.4l1.5 1.5M17.1 17.1l1.5 1.5M18.6 5.4l-1.5 1.5M6.9 17.1l-1.5 1.5',
+    ],
+    part: [
+      'M9.4 7.6a3.4 3.4 0 0 1 4.6 4',
+      'M9.4 2.9v1.7M3.9 8.4h1.7M5.5 4.5l1.2 1.2',
+      'M8 19.4h8.1a3.3 3.3 0 0 0 .3-6.6A5.2 5.2 0 0 0 6.8 11.4 3.9 3.9 0 0 0 8 19.4z',
+    ],
+    cloud: [
+      'M8 18.6h8.1a3.4 3.4 0 0 0 .3-6.7A5.3 5.3 0 0 0 6.7 10.6 3.9 3.9 0 0 0 8 18.6z',
+    ],
+    rain: [
+      'M8 15.2h8.1a3.4 3.4 0 0 0 .3-6.7A5.3 5.3 0 0 0 6.7 7.2 3.9 3.9 0 0 0 8 15.2z',
+      'M8.6 18.1l-.8 2.4M12 18.1l-.8 2.4M15.4 18.1l-.8 2.4',
+    ],
+    storm: [
+      'M8 14.4h8.1a3.4 3.4 0 0 0 .3-6.7A5.3 5.3 0 0 0 6.7 6.4 3.9 3.9 0 0 0 8 14.4z',
+      'M12.9 16.4l-2.6 3.4h2.3l-1.3 2.6',
+    ],
+    snow: [
+      'M8 14.6h8.1a3.4 3.4 0 0 0 .3-6.7A5.3 5.3 0 0 0 6.7 6.6 3.9 3.9 0 0 0 8 14.6z',
+      'M9.2 17.4v3.2M7.8 18.2l2.8 1.6M10.6 18.2l-2.8 1.6',
+      'M14.8 17.4v3.2M13.4 18.2l2.8 1.6M16.2 18.2l-2.8 1.6',
+    ],
+    fog: [
+      'M8 13.6h8.1a3.4 3.4 0 0 0 .3-6.7A5.3 5.3 0 0 0 6.7 5.6 3.9 3.9 0 0 0 8 13.6z',
+      'M5.6 17.4h12.8M7.6 20.6h8.8',
+    ],
+  };
+
+  /**
+   * Draws one condition icon, or nothing.
+   *
+   * An unrecognised key returns null rather than falling back to a default
+   * glyph: no icon is honest, a wrong icon is a small lie about the
+   * weather, and the text beside it is unaffected either way.
+   */
+  function buildWeatherIcon(key) {
+    const paths = WEATHER_ICON_PATHS[String(key || '')];
+    if (!paths) {
+      return null;
+    }
+
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('class', 'libcal-gantt-home__weather-icon');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '1.8');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    // Decorative twice over: aria-hidden keeps it out of the accessibility
+    // tree and focusable=false keeps IE/Edge's old SVG behaviour from
+    // putting it in the tab order.
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+
+    paths.forEach((d) => {
+      const path = document.createElementNS(SVG_NS, 'path');
+      path.setAttribute('d', d);
+      svg.appendChild(path);
+    });
+
+    return svg;
   }
 
   function appendHomepageHoursLine(card, day, state) {

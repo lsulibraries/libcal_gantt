@@ -59,6 +59,25 @@ libcal_gantt.settings:
       sequence:
         type: integer
         label: 'Location ID (lid)'
+    show_weather:
+      type: boolean
+      label: 'Show daily weather'
+    # Strings, not floats. A float coerces an empty field to 0.0, which is a
+    # real point NWS will happily forecast for (the Gulf of Guinea); as
+    # strings, "not configured" stays distinguishable from "the equator" and
+    # WeatherClient::coordinate() can reject it.
+    weather_lat:
+      type: string
+      label: 'Forecast latitude'
+    weather_lon:
+      type: string
+      label: 'Forecast longitude'
+    weather_contact:
+      type: string
+      label: 'Weather API contact address'
+    weather_cache_ttl:
+      type: integer
+      label: 'Weather cache lifetime in seconds'
 
 # Per-block-instance DISPLAY settings, as opposed to the feed settings
 # above. Split this way so the same LibCal feed can be placed twice - a

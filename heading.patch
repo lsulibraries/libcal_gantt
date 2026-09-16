@@ -1,0 +1,81 @@
+diff --git a/css/gantt-timeline.css b/css/gantt-timeline.css
+index 7b01dd6..54259ab 100644
+--- a/css/gantt-timeline.css
++++ b/css/gantt-timeline.css
+@@ -2048,6 +2048,35 @@ a.libcal-gantt-agenda__link:focus {
+   text-transform: uppercase;
+ }
+ 
++/* Visually hidden, still announced. The first band's heading is redundant
++   on screen - the today card beside it is outlined and badged - but it is
++   the accessible name of that band's group and the block's only h3, so it
++   has to stay in the accessibility tree. See startBand() for why only the
++   first one.
++
++   Not `display: none` and not `visibility: hidden`: both of those take the
++   element out of the accessibility tree too, which would leave a
++   role="group" with no name. This is the standard clip pattern, spelled out
++   here rather than borrowed from the theme so the block does not depend on
++   a `visually-hidden` class it cannot guarantee is present.
++
++   Taking it out of flow also cleans up after itself: `.libcal-gantt-home__bands`
++   draws its hairlines with `gap` over a background, so an in-flow hidden
++   heading would still reserve a gap and leave a stray 1px rule across the
++   top of the block. */
++.libcal-gantt-home__week-heading--offscreen {
++  position: absolute;
++  width: 1px;
++  height: 1px;
++  margin: -1px;
++  padding: 0;
++  overflow: hidden;
++  clip: rect(0 0 0 0);
++  clip-path: inset(50%);
++  border: 0;
++  white-space: nowrap;
++}
++
+ .libcal-gantt-home__reveal {
+   display: flex;
+   justify-content: center;
+diff --git a/js/gantt-timeline.js b/js/gantt-timeline.js
+index b68ef5b..6b90e46 100644
+--- a/js/gantt-timeline.js
++++ b/js/gantt-timeline.js
+@@ -1074,10 +1074,36 @@
+ 
+     let band = null;
+     let bandDays = [];
++    // THE FIRST BAND'S HEADING IS HIDDEN FROM SIGHT, NOT FROM THE PAGE.
++    //
++    // It is the one heading nobody asked for: it renders on load, directly
++    // under the block's own header, and says "Week of Sep 15" above a row
++    // of cards whose first card is already outlined, badged "Today" and
++    // marked aria-current. Two labels for one week, and the redundant one
++    // is on top - so it reads as a second header stacked on a header and
++    // pushes the cards further down the scarcest space on the homepage.
++    //
++    // Every LATER heading earns its keep, which is why this is not a rule
++    // about week headings in general: those appear only after Show more,
++    // where they are the separator that tells you the run of cards you were
++    // reading has ended and a new week has started. Hiding those would
++    // leave a continuous strip of twelve cards with nothing to break it.
++    //
++    // Kept in the DOM rather than skipped, because it is doing two jobs
++    // that have nothing to do with being seen: it is the accessible name of
++    // this band's role="group" (aria-labelledby, below - a named group is
++    // how a screen reader user can skip a week they do not care about), and
++    // it is this block's only h3, so removing it would leave the day cards
++    // hanging off the block heading with a level missing from the outline.
++    let bandsStarted = 0;
+     const startBand = (firstDay) => {
+       bandDays = [firstDay];
+       const weekHeading = document.createElement('h3');
+       weekHeading.className = 'libcal-gantt-home__week-heading';
++      if (bandsStarted === 0) {
++        weekHeading.classList.add('libcal-gantt-home__week-heading--offscreen');
++      }
++      bandsStarted += 1;
+       weekHeading.id = state.instanceId + '-week-' + firstDay;
+       weekHeading.textContent = Drupal.t('Week of @date', {
+         '@date': formatDayLabel(firstDay, true),

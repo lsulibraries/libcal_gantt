@@ -13,3 +13,8 @@ online_row_label: 'Online Event'
 online_location_keywords: 'online,virtual'
 campus_hours_feed_urls: {}
 campus_hours_lids: {}
+show_weather: false
+weather_lat: ''
+weather_lon: ''
+weather_contact: ''
+weather_cache_ttl: 1800
