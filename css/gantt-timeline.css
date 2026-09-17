@@ -220,15 +220,35 @@
   --libcal-gantt-item-image-blend: normal;
   --libcal-gantt-item-image-fade-start: 0%;
   --libcal-gantt-item-image-width: 62%;
-  /* How far the layer also fades at its top and bottom edges. This is the
-     price of blending `normal` on a dark surface: multiply used to dispose
-     of a white flyer canvas for free, and without it a white canvas fills
-     the layer to all four edges and reads as a pasted-in slab - the exact
-     "white rectangle is a hole" problem noted above, just inverted. Fading
-     the horizontal edges too turns that slab into a vignette with no edge
-     of its own, which a photo benefits from as well. Set to 0 to square
-     the layer off again. */
-  --libcal-gantt-item-image-soften: 26%;
+  /* How far the layer also fades at its top and bottom edges, PER EDGE.
+     Both ship at zero, and only one rule in the file raises either: the
+     bottom edge of a card's last row (section 13e-ter).
+
+     WHY PER EDGE. The two edges are not the same problem, because what
+     lies beyond them is not the same thing. Every top edge, and every
+     bottom edge but one, lands on a hairline - the rule under the date or
+     the rule between two events - so a square cut there is invisible;
+     that is the argument that bleeds the row horizontally to the card
+     edge (section 13d), applied vertically. The exception is the bottom of
+     the LAST row in a card: cards stretch to the tallest column in their
+     row, so below that row is open card surface, and a square cut in open
+     surface is the "mis-sized panel" read this whole effect is trying to
+     avoid. One edge in the effect needs a fade; four do not.
+
+     WHY A LENGTH, NOT A PERCENTAGE. This was 26% for both edges - a
+     vignette - and a percentage is measured against the row's own height,
+     which varies by a factor of four between a one-line event and one
+     whose title wraps to three lines with tags and a room under it. At 26%
+     a tall row lost ~29px at each end, so its ramp died out well short of
+     its hairline and two stacked events showed a bare band of card
+     between their images. A length feathers the edge by the same amount
+     everywhere, which is what "soft edge" means; `min()` at the use site
+     keeps it from eating a short row.
+
+     Raise `-top` too if you want the old vignette back; 26% at both ends
+     is the original. */
+  --libcal-gantt-item-image-soften-top: 0px;
+  --libcal-gantt-item-image-soften-bottom: 0px;
   --libcal-gantt-item-image-zoom: 1.09;
 
   /* Venue tag colours, used by the homepage variant's location tags (see
@@ -761,15 +781,13 @@
   z-index: 2;
 }
 
-/* Hover brightens the LABEL and leaves the border alone. It used to turn
-   the border purple, which was unambiguous while the selected tab was a
-   filled purple block - but now that purple border IS the selected marker,
-   so hovering the unselected tab made it impersonate the selected one.
-   Raising the held-back label to full strength is the same "this is live"
-   feedback without borrowing the one signal that already means something
-   else. */
+/* Hover brightens the label and lights the border with the same active
+   edge used by the selected display tab. This gives an unselected tab a
+   clear interaction response without changing its background or selected
+   state. */
 .libcal-gantt-tabs__tab:hover:not(.is-active) {
   transition-duration: var(--libcal-gantt-hover-in);
+  border-color: var(--libcal-gantt-tab-active-edge);
   color: var(--libcal-gantt-header-color);
 }
 
@@ -865,10 +883,18 @@
    settles onto the header surface. */
 .libcal-gantt-theme-toggle:hover,
 .libcal-gantt-theme-toggle:focus-visible {
-  border-color: var(--libcal-gantt-today-accent);
+  border-color: var(--libcal-gantt-tab-active-edge);
   background: var(--libcal-gantt-header-bg);
   color: var(--libcal-gantt-text);
   transition-duration: var(--libcal-gantt-hover-in);
+}
+
+/* The large-text control follows the Events/Library Displays toggle:
+   its hover surface and text may respond, but its border stays the same
+   neutral border rather than adopting the gold action accent. */
+.libcal-gantt-large-mode-toggle:hover,
+.libcal-gantt-large-mode-toggle:focus-visible {
+  border-color: var(--libcal-gantt-tab-active-edge);
 }
 
 .libcal-gantt-theme-toggle__icon {
@@ -2314,7 +2340,12 @@ a.libcal-gantt-agenda__link:focus {
 .libcal-gantt-home__day {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  /* Named because a second rule needs the same number: the last event row
+     in a card bleeds its image layer down across exactly this gap so the
+     picture ends on the hours footer's hairline instead of a few pixels
+     above it (section 13e-ter). Change it here and the bleed follows. */
+  --libcal-gantt-day-gap: 8px;
+  gap: var(--libcal-gantt-day-gap);
   min-width: 0;
 
 
@@ -2520,7 +2551,10 @@ a.libcal-gantt-agenda__link:focus {
    left accent - a bordered component whose height is its own business,
    not a row in this list. */
 .libcal-gantt-home__list .libcal-gantt-home__link {
-  padding-block: 9px;
+  /* Named for the same reason as the card's gap above: section 13e-ter has
+     to restate this padding when it grows one row's box downward. */
+  --libcal-gantt-item-pad-y: 9px;
+  padding-block: var(--libcal-gantt-item-pad-y);
 
   /* FULL-BLEED ROW, TEXT UNMOVED. The negative margin grows the row's box
      out to the card's padding box on both sides; the matching padding puts
@@ -2548,10 +2582,17 @@ a.libcal-gantt-agenda__link:focus {
      Bled both ways the highlight spans the card like a table row, which is
      what it already looks like it is trying to be.
 
-     Horizontal only. Vertically the same layer fades to nothing at its own
-     top and bottom edges (`--libcal-gantt-item-image-soften`), so there is
-     no hard edge up there to rescue - and a vertical bleed would push each
-     image into the hairline above it and into its neighbour's text.
+     HORIZONTAL HERE, VERTICAL IN ONE PLACE ONLY. The layer is absolutely
+     positioned to `inset: 0`, which resolves against the row's PADDING
+     box, so it already covers the 9px of padding-block above and below the
+     text and reaches the hairlines on either side of the row. Padding
+     never clipped the image. For an interior row that is the whole story,
+     and a negative block margin would achieve nothing except to push its
+     image past a hairline and into its neighbour's text.
+
+     The last row in a card is the exception - what lies below it is open
+     card surface rather than another row - and section 13e-ter bleeds that
+     one row, and only that one, down across the card's gap.
 
      The hairlines stay inset, on the <li>. That is deliberate and the list
      border comment above explains it: bled at both ends they would frame
@@ -3372,8 +3413,14 @@ a.libcal-gantt-home__weekend-event:focus {
      2. A mask fades the layer in from left to right - fully transparent at
         the left edge, reaching full strength at the right - so the time,
         title, location and tags on the left always sit on clean surface.
-        A second mask layer fades the top and bottom edges as well, so the
-        image has no hard edge of its own on any side.
+        A second mask layer fades the top and bottom edges, but both
+        `--libcal-gantt-item-image-soften-top` and `-bottom` ship at 0, so
+        by default the layer squares off there and fills the row's full
+        height - its cuts coincide with the hairlines above and below the
+        row, which is where a cut goes unnoticed. The one edge with nothing
+        beyond it to justify a cut - the bottom of a card's last row -
+        raises `-bottom` for itself in section 13e-ter. See section 1 for
+        why the all-round vignette was dropped.
         A mask rather than a gradient of surface colour painted on top,
         because that trick (which section 9 does use) needs to know the
         colour behind it, and a row's backdrop changes on hover.
@@ -3451,8 +3498,8 @@ a.libcal-gantt-home__weekend-event:focus {
     linear-gradient(
       to bottom,
       transparent 0,
-      #000 var(--libcal-gantt-item-image-soften, 26%),
-      #000 calc(100% - var(--libcal-gantt-item-image-soften, 26%)),
+      #000 var(--libcal-gantt-item-image-soften-top, 0px),
+      #000 calc(100% - var(--libcal-gantt-item-image-soften-bottom, 0px)),
       transparent 100%
     );
   mask-image:
@@ -3467,8 +3514,8 @@ a.libcal-gantt-home__weekend-event:focus {
     linear-gradient(
       to bottom,
       transparent 0,
-      #000 var(--libcal-gantt-item-image-soften, 26%),
-      #000 calc(100% - var(--libcal-gantt-item-image-soften, 26%)),
+      #000 var(--libcal-gantt-item-image-soften-top, 0px),
+      #000 calc(100% - var(--libcal-gantt-item-image-soften-bottom, 0px)),
       transparent 100%
     );
   /* The two gradients must MULTIPLY, not stack: the default composite for
@@ -3511,6 +3558,75 @@ a.libcal-gantt-agenda__link.has-image:hover::after,
 a.libcal-gantt-agenda__link.has-image:focus::after {
   transform: scale(var(--libcal-gantt-item-image-zoom, 1.09));
   transition-duration: var(--libcal-gantt-hover-in);
+}
+
+/* -------------------------------------------------------------------------
+   13e-ter. THE LAST ROW IN A CARD - THE ONE IMAGE EDGE THAT ENDS IN THE OPEN
+   -------------------------------------------------------------------------
+   Every other edge of this layer ends on something. Left and right: the
+   left-to-right mask fades one to nothing and the row's horizontal bleed
+   (section 13d) puts the other on the card's own boundary. Top, and the
+   bottom of every interior row: a hairline - the rule under the date, or
+   the rule between two events - so the cut reads as the boundary that is
+   drawn there anyway. Two stacked events show one continuous strip of
+   picture divided by a hairline, which is the intent.
+
+   The bottom of a card's LAST row is the exception, and it is structural,
+   not a tuning problem. Cards are grid items stretched to the tallest
+   column in their band, and the hours footer is pinned to the bottom with
+   `margin-top: auto`, so between the last row and that footer there is
+   always at least the card's gap and usually a good deal of empty card as
+   well. A square cut there is a hard horizontal line across open surface
+   with nothing to explain it - the "mis-sized panel" read, which is the
+   same objection that got the row bled sideways in the first place.
+
+   Two things, in this order:
+
+   1. BLEED THE ROW DOWN BY THE CARD'S GAP. Negative block-end margin with
+      matching padding - the vertical mirror of section 13d, and it holds
+      for the same reason: the margin box comes out the same height, so the
+      <li> does not move, the text does not move, and nothing rewraps.
+      `overflow: hidden` on the row takes its clip down with it, which is
+      what lets the layer into the gap at all. The distance is exactly the
+      gap, so the layer's bottom edge meets the footer's hairline and stops:
+      one pixel more and a positioned pseudo-element would paint over that
+      footer's border and its background, since the footer is unpositioned
+      and later in the DOM.
+
+   2. FEATHER WHAT IS LEFT. In a short card step 1 is the whole fix - the
+      picture now runs into a hairline like every other edge. In a stretched
+      card there is no hairline to reach, so the edge fades instead.
+      `min()` is the point: 18px on a row tall enough to spare it, and 22%
+      of a short row, which is the guard the flat 26% vignette never had -
+      that value was a percentage of a height that varies fourfold, so it
+      stranded tall rows' images a good 25px short of their own edge. Most
+      of the feather falls in the 8px bled out of step 1, so the picture
+      itself gives up very little.
+
+   Scoped to `.has-image`, because the bleed exists for the picture. It
+   takes the row's hover fill with it, which is a bonus rather than a cost:
+   the fill then runs to the footer's hairline the same way it already runs
+   to the card's side edges.
+
+   The AGENDA variant gets the feather but no bleed. Its rows are rounded
+   4px boxes inside a padded day block rather than flush rows in a card, so
+   there is no hairline immediately below to bleed to - but the last row of
+   a day still ends in open space, so the soft edge applies.
+   ------------------------------------------------------------------------- */
+
+.libcal-gantt-home__list
+  > .libcal-gantt-home__item:last-child
+  > .libcal-gantt-home__link.has-image {
+  margin-block-end: calc(-1 * var(--libcal-gantt-day-gap, 8px));
+  padding-block-end:
+    calc(var(--libcal-gantt-item-pad-y, 9px) + var(--libcal-gantt-day-gap, 8px));
+  --libcal-gantt-item-image-soften-bottom: min(18px, 22%);
+}
+
+.libcal-gantt-agenda__list
+  > .libcal-gantt-agenda__event:last-child
+  > .libcal-gantt-agenda__link.has-image {
+  --libcal-gantt-item-image-soften-bottom: min(18px, 22%);
 }
 
 /* =========================================================================

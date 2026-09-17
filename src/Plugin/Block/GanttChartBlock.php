@@ -6,10 +6,15 @@ namespace Drupal\libcal_gantt\Plugin\Block;
 
 use Drupal\Core\Block\Attribute\Block;
 use Drupal\Core\Block\BlockBase;
+use Drupal\Core\Cache\Cache;
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Component\Utility\Html;
+use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\Core\Url;
+use Drupal\libcal_gantt\Form\SettingsForm;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * Provides the "LibCal Events Gantt Chart" block.
@@ -40,23 +45,49 @@ use Drupal\Core\Url;
   id: 'libcal_gantt_chart',
   admin_label: new TranslatableMarkup('LibCal Events Gantt Chart'),
 )]
-class GanttChartBlock extends BlockBase {
+class GanttChartBlock extends BlockBase implements ContainerFactoryPluginInterface {
 
   /**
-   * TEMPORARY stand-in target for the "Full calendar" link.
+   * Config factory, for the site-wide "Full calendar" link target.
    *
-   * Used only when a placement's own "Full calendar URL" is blank, so
-   * anything configured in the block form still wins. Applied at build
-   * time rather than in defaultConfiguration(), because defaults are read
-   * only when a block is FIRST placed: an existing placement already has
-   * an empty string saved against this key, and a new default would never
-   * be consulted for it.
-   *
-   * To retire this, delete the constant and restore the plain
-   * `$config['full_calendar_url'] !== ''` test in build(). Two lines, one
-   * place.
+   * That URL is deliberately NOT a block default: defaults are read only
+   * when a block is FIRST placed, so an existing placement - which already
+   * has an empty string saved against this key - would never consult a new
+   * one. Reading the site setting at build time means the link can be
+   * changed in one place and every placement that has not overridden it
+   * picks the change up.
    */
-  const TEMPORARY_FULL_CALENDAR_URL = 'https://lsu.libcal.com/calendar/eventsandprogramming?cid=-1&t=m&d=0000-00-00&cal=-1&inc=0';
+  protected ConfigFactoryInterface $configFactory;
+
+  public function __construct(array $configuration, $plugin_id, $plugin_definition, ConfigFactoryInterface $config_factory) {
+    parent::__construct($configuration, $plugin_id, $plugin_definition);
+    $this->configFactory = $config_factory;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition): static {
+    return new static(
+      $configuration,
+      $plugin_id,
+      $plugin_definition,
+      $container->get('config.factory')
+    );
+  }
+
+  /**
+   * Returns the site-wide "Full calendar" URL, or '' if it is unset.
+   */
+  protected function siteFullCalendarUrl(): string {
+    $configured = $this->configFactory->get('libcal_gantt.settings')->get('full_calendar_url');
+
+    // NULL - as opposed to an empty string - means the site's saved config
+    // predates this setting, so the shipped default stands in until
+    // libcal_gantt_update_10003() seeds it. A deliberately emptied setting
+    // stays empty and omits the link.
+    return trim((string) ($configured ?? SettingsForm::DEFAULT_FULL_CALENDAR_URL));
+  }
 
   /**
    * {@inheritdoc}
@@ -125,12 +156,23 @@ class GanttChartBlock extends BlockBase {
       '#description' => $this->t('How many days are visible before "Show more" is used. Each click then reveals the rest of that week plus the following one, so the cards always fill complete rows. Weekend days are grouped into a single strip and do not count toward this number.'),
     ];
 
+    $siteUrl = $this->siteFullCalendarUrl();
     $form['homepage']['full_calendar_url'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Full calendar URL'),
       '#default_value' => $config['full_calendar_url'],
       '#maxlength' => 255,
-      '#description' => $this->t('Target of the "Full calendar" link, e.g. /events or https://lib.lsu.edu/events. Temporarily, leaving this empty falls back to the LibCal events and programming calendar rather than omitting the link.'),
+      // The inherited value is spelled out rather than merely referred to,
+      // so an editor can see what an empty field will actually link to
+      // without opening the module settings form in another tab.
+      '#description' => $siteUrl !== ''
+        ? $this->t('Override the "Full calendar" link for this placement only, e.g. /events. Leave empty - the recommended setting - to inherit the site-wide URL, currently @url, from the <a href=":settings" target="_blank">module settings form</a>.', [
+          '@url' => $siteUrl,
+          ':settings' => Url::fromRoute('libcal_gantt.settings')->toString(),
+        ])
+        : $this->t('Target of the "Full calendar" link, e.g. /events or https://lsu.libcal.com/calendar/eventsandprogramming. No site-wide URL is set on the <a href=":settings" target="_blank">module settings form</a>, so leaving this empty omits the link entirely.', [
+          ':settings' => Url::fromRoute('libcal_gantt.settings')->toString(),
+        ]),
     ];
 
     $form['appearance'] = [
@@ -221,12 +263,12 @@ class GanttChartBlock extends BlockBase {
       if ($config['chart_title'] !== '') {
         $attributes['data-chart-title'] = $config['chart_title'];
       }
-      // TEMPORARY: falls back to TEMPORARY_FULL_CALENDAR_URL while the
-      // real destination is being decided. A URL entered in the block form
-      // still takes precedence; only a blank one picks up the stand-in.
-      $fullCalendarUrl = $config['full_calendar_url'] !== ''
-        ? $config['full_calendar_url']
-        : self::TEMPORARY_FULL_CALENDAR_URL;
+      // Placement first, site setting second, no link third. Trimmed
+      // because a placement holding only whitespace is an empty override,
+      // not a destination.
+      $fullCalendarUrl = trim((string) $config['full_calendar_url']) !== ''
+        ? trim((string) $config['full_calendar_url'])
+        : $this->siteFullCalendarUrl();
       if ($fullCalendarUrl !== '') {
         // Keep the canonical URL attribute and emit the historical alias
         // too, so markup cached from the earlier build and any external
@@ -252,8 +294,21 @@ class GanttChartBlock extends BlockBase {
       ],
       '#cache' => [
         'max-age' => 300,
+        // The markup now embeds a value from module settings, so it has to
+        // be invalidated when that config is saved rather than only when
+        // the max-age lapses.
+        'tags' => $this->configFactory->get('libcal_gantt.settings')->getCacheTags(),
       ],
     ];
+  }
+
+  public function getCacheTags(): array {
+    // Same reason as the #cache tags in build(): the "Full calendar" URL
+    // travels in the block markup, so saving the setting must rebuild it.
+    return Cache::mergeTags(
+      parent::getCacheTags(),
+      $this->configFactory->get('libcal_gantt.settings')->getCacheTags()
+    );
   }
 
   public function getCacheMaxAge(): int {

@@ -157,6 +157,11 @@ Go to **Admin > Configuration > Web services > LibCal Gantt Timeline**
   the label for the always-first online row, plus an optional comma-separated
   keyword fallback for online events not using LibCal's own online-meeting
   integration.
+- **Full calendar URL** — target of the "Full calendar" link on the homepage
+  teaser, e.g. `https://lsu.libcal.com/calendar/eventsandprogramming?cid=-1&t=m&d=0000-00-00&cal=-1&inc=0`
+  or a root-relative path such as `/events`. Set once here and every teaser
+  placement inherits it; a placement can override it in the block form, and
+  clearing this field renders the teaser with no link at all.
 - **Hours feed URL** *(optional)*, plus a feed URL and **Location ID (lid)**
   per row, to show open/close captions. See
   [docs/building-hours.md](docs/building-hours.md).
@@ -187,6 +192,12 @@ real start time, clipped only to the calendar day.
 If you had narrowed that window deliberately to keep off-hours events off the
 chart, those events will now appear. There is no replacement setting — filter
 at the LibCal calendar level instead.
+
+`libcal_gantt_update_10003` adds the site-wide **Full calendar URL** setting,
+seeded with the LibCal events and programming calendar so the teaser link
+keeps working across the update. Block placements that saved their own URL
+continue to win over it; the update reports which ones, and clearing the field
+on a placement makes it inherit the site setting instead.
 
 ## Customizing the look
 

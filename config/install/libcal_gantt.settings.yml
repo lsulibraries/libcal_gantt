@@ -11,6 +11,7 @@ hours_cache_ttl: 3600
 campus_rows: "261|Main Library\n262|Hill Memorial Library"
 online_row_label: 'Online Event'
 online_location_keywords: 'online,virtual'
+full_calendar_url: 'https://lsu.libcal.com/calendar/eventsandprogramming?cid=-1&t=m&d=0000-00-00&cal=-1&inc=0'
 campus_hours_feed_urls: {}
 campus_hours_lids: {}
 show_weather: false

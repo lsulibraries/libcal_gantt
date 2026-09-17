@@ -47,6 +47,12 @@ libcal_gantt.settings:
     online_location_keywords:
       type: string
       label: 'Online location keywords'
+    # A string rather than a uri: the value is allowed to be a
+    # root-relative path (/events) as well as an absolute URL, and the
+    # uri type would reject the former.
+    full_calendar_url:
+      type: string
+      label: 'Full calendar URL'
     campus_hours_feed_urls:
       type: sequence
       label: 'Per-row hours feed URLs'

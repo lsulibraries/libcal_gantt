@@ -15,6 +15,17 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  */
 class SettingsForm extends ConfigFormBase {
 
+  /**
+   * Fallback target for the site-wide "Full calendar" link.
+   *
+   * The real default ships in config/install/libcal_gantt.settings.yml and
+   * is seeded on existing sites by libcal_gantt_update_10003(), so this
+   * constant only supplies a value for a site whose saved config predates
+   * the setting and has not run database updates yet. GanttChartBlock
+   * reads it for the same reason.
+   */
+  public const DEFAULT_FULL_CALENDAR_URL = 'https://lsu.libcal.com/calendar/eventsandprogramming?cid=-1&t=m&d=0000-00-00&cal=-1&inc=0';
+
   protected CacheTagsInvalidatorInterface $cacheTagsInvalidator;
 
   public static function create(ContainerInterface $container): static {
@@ -129,6 +140,21 @@ class SettingsForm extends ConfigFormBase {
       '#title' => $this->t('Online location keywords (fallback)'),
       '#default_value' => $config->get('online_location_keywords') ?: 'online,virtual',
       '#description' => $this->t('Events set up with LibCal\'s own "Online Event" meeting integration (Zoom, Teams, etc.) are always detected automatically - no configuration needed for those, even when their location field is blank, which is normal for them. This keyword list is only a fallback for events that are online WITHOUT using that integration - e.g. a location literally named "Online" or "Zoom." Comma-separated, case-insensitive, matched as a substring against the location text. Leave blank to disable the fallback and rely only on LibCal\'s own online-meeting fields.'),
+    ];
+
+    // Site-wide because the destination of this link is a property of the
+    // library, not of one block placement: without it the URL has to be
+    // retyped on every teaser that is placed. A placement can still
+    // override it in the block form when a second teaser genuinely needs a
+    // different target.
+    $form['display']['full_calendar_url'] = [
+      // Not '#type' => 'url', which requires an absolute URL and would
+      // reject the perfectly valid /events.
+      '#type' => 'textfield',
+      '#title' => $this->t('Full calendar URL'),
+      '#default_value' => $config->get('full_calendar_url') ?? self::DEFAULT_FULL_CALENDAR_URL,
+      '#maxlength' => 255,
+      '#description' => $this->t('Target of the "Full calendar" link on the homepage teaser. Accepts an absolute URL (https://lsu.libcal.com/...) or a root-relative path (/events). Block placements that leave their own "Full calendar URL" empty inherit this value. Clearing this field renders the teaser with no "Full calendar" link at all.'),
     ];
 
     $form['hours'] = [
@@ -284,6 +310,16 @@ class SettingsForm extends ConfigFormBase {
   public function validateForm(array &$form, FormStateInterface $form_state): void {
     parent::validateForm($form, $form_state);
 
+    // Checked before the weather block below, which returns early. A bare
+    // "events" would resolve relative to whatever path the teaser happens
+    // to be rendered on, so the link would work on the homepage and break
+    // everywhere else - worth catching at save time rather than in
+    // production.
+    $fullCalendarUrl = trim((string) $form_state->getValue('full_calendar_url'));
+    if ($fullCalendarUrl !== '' && !preg_match('#^(https?://|/)#i', $fullCalendarUrl)) {
+      $form_state->setErrorByName('full_calendar_url', $this->t('The full calendar URL must begin with https://, http:// or / so it resolves the same way on every page.'));
+    }
+
     if (!$form_state->getValue('show_weather')) {
       return;
     }
@@ -319,6 +355,7 @@ class SettingsForm extends ConfigFormBase {
       ->set('campus_rows', (string) $form_state->getValue('campus_rows'))
       ->set('online_row_label', trim((string) $form_state->getValue('online_row_label')))
       ->set('online_location_keywords', (string) $form_state->getValue('online_location_keywords'))
+      ->set('full_calendar_url', trim((string) $form_state->getValue('full_calendar_url')))
       ->set('show_weather', (bool) $form_state->getValue('show_weather'))
       // Saved as trimmed strings, not cast to float, so an unset coordinate
       // stays empty rather than becoming 0.0 - see the note in

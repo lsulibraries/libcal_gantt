@@ -96,3 +96,60 @@ function libcal_gantt_update_10002(): string {
     implode(', ', $added)
   );
 }
+
+/**
+ * Adds the site-wide "Full calendar" link setting.
+ *
+ * The URL used to live only on each block placement, with a hardcoded
+ * stand-in in GanttChartBlock covering placements that left it blank. That
+ * meant the destination could not be set anywhere on the module settings
+ * form, and a site running several teasers had to retype it per placement.
+ * It is now a real setting, and a placement's own field is an optional
+ * override of it.
+ *
+ * Seeds the key with the LibCal events and programming calendar - the same
+ * URL the removed stand-in used - so the link keeps working across the
+ * update instead of disappearing until an admin visits the form. An
+ * existing value is never overwritten.
+ *
+ * Placements that saved their own URL still win over the new setting, so
+ * this reports them rather than silently rewriting per-site editorial
+ * choices: clear the field on a placement to have it inherit.
+ */
+function libcal_gantt_update_10003(): string {
+  $config = \Drupal::configFactory()->getEditable('libcal_gantt.settings');
+  $messages = [];
+
+  if ($config->get('full_calendar_url') === NULL) {
+    $default = \Drupal\libcal_gantt\Form\SettingsForm::DEFAULT_FULL_CALENDAR_URL;
+    $config->set('full_calendar_url', $default)->save(TRUE);
+    $messages[] = sprintf('Added the full_calendar_url setting, defaulting to %s.', $default);
+  }
+  else {
+    $messages[] = 'The full_calendar_url setting was already present; left unchanged.';
+  }
+
+  // Config entities only - a teaser placed through Layout Builder stores
+  // its settings on the layout instead and is not enumerated here.
+  $overrides = [];
+  $blocks = \Drupal::entityTypeManager()
+    ->getStorage('block')
+    ->loadByProperties(['plugin' => 'libcal_gantt_chart']);
+
+  foreach ($blocks as $id => $block) {
+    $settings = (array) $block->get('settings');
+    $url = trim((string) ($settings['full_calendar_url'] ?? ''));
+    if ($url !== '') {
+      $overrides[] = sprintf('%s (%s)', $id, $url);
+    }
+  }
+
+  if ($overrides) {
+    $messages[] = sprintf(
+      'These placements keep their own "Full calendar URL" and therefore ignore the site setting: %s. Clear the field on a placement to inherit.',
+      implode(', ', $overrides)
+    );
+  }
+
+  return implode(' ', $messages);
+}
