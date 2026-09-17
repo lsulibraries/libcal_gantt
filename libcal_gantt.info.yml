@@ -1,0 +1,7 @@
+name: 'LibCal Gantt Timeline'
+type: module
+description: 'Displays upcoming LibCal (Springshare) events for the next N weekdays as a Gantt-style timeline block.'
+package: Custom
+core_version_requirement: ^10.2 || ^11
+dependencies:
+  - drupal:block
