@@ -228,7 +228,11 @@ class GanttChartBlock extends BlockBase {
         ? $config['full_calendar_url']
         : self::TEMPORARY_FULL_CALENDAR_URL;
       if ($fullCalendarUrl !== '') {
+        // Keep the canonical URL attribute and emit the historical alias
+        // too, so markup cached from the earlier build and any external
+        // inspection tooling resolve the same configured destination.
         $attributes['data-full-calendar-url'] = $fullCalendarUrl;
+        $attributes['data-full-calendar'] = $fullCalendarUrl;
       }
     }
 

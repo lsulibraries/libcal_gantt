@@ -154,6 +154,8 @@
    */
   const THEME_STORAGE_KEY = 'libcal-gantt-theme';
 
+  const LARGE_MODE_STORAGE_KEY = 'largeMode';
+  const LARGE_MODE_CLASS = 'large-mode';
   /**
    * How many event notes the desktop weekend accessory column will list
    * individually in one row's cell before collapsing the rest into a
@@ -228,9 +230,13 @@
       // heading element at all, so a site whose surrounding layout
       // already provides a section title is not forced into a duplicate.
       chartTitle: typeof data.chartTitle === 'string' ? data.chartTitle : '',
-      // Target of the "Full calendar" call to action. Empty means the
-      // link is not rendered - better than a link to nowhere.
-      fullCalendarUrl: typeof data.fullCalendarUrl === 'string' ? data.fullCalendarUrl : '',
+      // Target of the "Full calendar" call to action. The canonical
+      // attribute is data-full-calendar-url; data-full-calendar is accepted
+      // as a compatibility alias for markup cached from the earlier build.
+      // Empty means the link is not rendered - better than a link to nowhere.
+      fullCalendarUrl: typeof data.fullCalendarUrl === 'string'
+        ? data.fullCalendarUrl
+        : (typeof data.fullCalendar === 'string' ? data.fullCalendar : ''),
       showLegend: data.showLegend !== '0',
       // 'dark' | 'light' | 'auto' - the STARTING theme; 'auto' follows the
       // visitor's OS-level prefers-color-scheme. A stored visitor choice
@@ -251,6 +257,12 @@
       // loadMoreHomepageDays()). Unused by the grid variant, which pages
       // by fetching rather than by revealing.
       homepageVisibleDays: options.homepageDays,
+      // The first homepage render intentionally keeps the initial teaser
+      // cards together even when the range crosses a weekend. Once the
+      // visitor uses Show more, normal week-band grouping takes over.
+      // Returning to the configured starting count restores this teaser
+      // layout through the Show less control.
+      homepageInitialLayout: true,
       // The RESOLVED theme in effect - always 'dark' or 'light', never
       // 'auto', which is settled once up front against the OS preference.
       // Kept on state so that a re-render (including the periodic
@@ -425,7 +437,82 @@
    * button's own label and pressed state - rebuilt from state.theme -
    * stay truthful.
    */
-  function buildThemeToggle(container, endpoint, state) {
+  function readLargeModeEnabled() {
+    try {
+      return window.localStorage.getItem(LARGE_MODE_STORAGE_KEY) === 'enabled';
+    }
+    catch (error) {
+      return document.body.classList.contains(LARGE_MODE_CLASS);
+    }
+  }
+
+  function setLargeModeEnabled(enabled) {
+    document.body.classList.toggle(LARGE_MODE_CLASS, enabled);
+    try {
+      window.localStorage.setItem(LARGE_MODE_STORAGE_KEY, enabled ? 'enabled' : 'disabled');
+    }
+    catch (error) {
+      // Local storage may be unavailable in private browsing or restricted contexts.
+    }
+  }
+
+  function updateLargeModeToggle(button, enabled) {
+    const label = button.querySelector('.libcal-gantt-large-mode-toggle__label');
+    const labelText = enabled ? Drupal.t('Normal text') : Drupal.t('Large text');
+    const accessibleText = enabled ? Drupal.t('Disable large text') : Drupal.t('Enable large text');
+
+    button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+    button.setAttribute('aria-label', accessibleText);
+    button.title = accessibleText;
+    if (label) {
+      label.textContent = labelText;
+    }
+  }
+
+  function buildLargeModeToggle() {
+    const button = document.createElement('button');
+    const enabled = readLargeModeEnabled();
+
+    button.type = 'button';
+    button.className = 'libcal-gantt-theme-toggle libcal-gantt-large-mode-toggle';
+
+    const icon = document.createElement('i');
+    icon.className = 'fad fa-text-size libcal-gantt-theme-toggle__icon';
+    icon.setAttribute('aria-hidden', 'true');
+    button.appendChild(icon);
+
+    const label = document.createElement('span');
+    label.className = 'libcal-gantt-large-mode-toggle__label';
+    label.textContent = enabled ? Drupal.t('Normal text') : Drupal.t('Large text');
+    button.appendChild(label);
+
+    button.addEventListener('click', () => {
+      const nextEnabled = !document.body.classList.contains(LARGE_MODE_CLASS);
+      setLargeModeEnabled(nextEnabled);
+      updateLargeModeToggle(button, nextEnabled);
+    });
+
+    setLargeModeEnabled(enabled);
+    updateLargeModeToggle(button, enabled);
+    return button;
+  }
+  function buildThemeToggle(...args) {
+    const themeToggle = buildThemeToggleButton(...args);
+    const largeModeToggle = buildLargeModeToggle();
+
+    if (!themeToggle) {
+      return largeModeToggle;
+    }
+
+    const controls = document.createElement('div');
+    controls.className = 'libcal-gantt-display-toggles';
+    controls.appendChild(themeToggle);
+    controls.appendChild(largeModeToggle);
+    return controls;
+  }
+
+
+  function buildThemeToggleButton(container, endpoint, state) {
     if (!state.options.allowThemeToggle) {
       return null;
     }
@@ -802,6 +889,8 @@
     state.weekends = [];
     state.weekendHours = {};
     state.weather = {};
+    state.homepageVisibleDays = state.options.homepageDays;
+    state.homepageInitialLayout = true;
     state.agendaVisibleDayCount = null;
   }
 
@@ -1037,8 +1126,11 @@
     // Read from `days.length`, not from the option, so a feed that returns
     // fewer days than configured still fills the width rather than
     // reserving tracks for cards that do not exist.
-    const expanded = state.homepageVisibleDays
-      > ((state.options && state.options.homepageDays) || HOMEPAGE_DAYS_PER_REVEAL);
+    // The initial teaser is the only render that intentionally ignores
+    // the week boundary. This lets a Thursday/Friday/Monday first page
+    // occupy one row; after Show more, Monday returns to its real week.
+    const initialTeaser = state.homepageInitialLayout !== false;
+    const expanded = !initialTeaser;
     if (!expanded) {
       bands.classList.add('libcal-gantt-home__bands--teaser');
     }
@@ -1102,6 +1194,10 @@
 
     let band = null;
     let bandDays = [];
+    // The initial teaser keeps its visible days in one card row. Weekend
+    // strips are collected and placed after that row so Monday can occupy
+    // the third slot instead of being pushed below the weekend divider.
+    const teaserWeekends = [];
     // THE FIRST BAND'S HEADING IS HIDDEN FROM SIGHT, NOT FROM THE PAGE.
     //
     // It is the one heading nobody asked for: it renders on load, directly
@@ -1164,7 +1260,8 @@
       card.style.setProperty('--libcal-gantt-day-order', String((bandDays.length - 1) * 2 + 1));
       currentBand.appendChild(card);
 
-      if (isBandEnd(days, index, marked) && (displayCalendar || spanEvents.length)) {
+      if (!initialTeaser && isBandEnd(days, index, marked)
+        && (displayCalendar || spanEvents.length)) {
         const drawn = appendHomepageSpans(currentBand, bandDays, state, seenDisplays, spanEvents, displayCalendar);
         // The hours only move out of the cards when this band actually
         // grew a span layer to sit above them - `drawn` is that fact, not a
@@ -1183,9 +1280,14 @@
       // not a third of the visitor's attention.
       const weekend = weekendByAfter.get(day);
       if (weekend) {
-        const strip = buildHomepageWeekendStrip(weekend, state, calendarShowHours);
-        if (strip) {
-          bands.appendChild(strip);
+        if (initialTeaser) {
+          teaserWeekends.push(weekend);
+        }
+        else {
+          const strip = buildHomepageWeekendStrip(weekend, state, calendarShowHours);
+          if (strip) {
+            bands.appendChild(strip);
+          }
         }
       }
 
@@ -1196,7 +1298,7 @@
       // hold more cards than fit and wrap, which is the shape the holes
       // came from. Left null rather than opened here so a week ending the
       // revealed range does not leave a stray empty row behind it.
-      if (isBandEnd(days, index, marked)) {
+      if (!initialTeaser && isBandEnd(days, index, marked)) {
         band = null;
       }
     });
@@ -1211,6 +1313,18 @@
       if (calendarShowHours && drawn) {
         appendHomepageBandHours(band);
       }
+    }
+
+    // Keep the teaser's weekend context, but only after all three initial
+    // cards have been placed. Expanded renders continue to insert each
+    // weekend strip between its two week bands above.
+    if (initialTeaser) {
+      teaserWeekends.forEach((weekend) => {
+        const strip = buildHomepageWeekendStrip(weekend, state, calendarShowHours);
+        if (strip) {
+          bands.appendChild(strip);
+        }
+      });
     }
 
     wrap.appendChild(bands);
@@ -1300,6 +1414,7 @@
 
     const controls = document.createElement('div');
     controls.className = 'libcal-gantt-home__controls';
+    controls.appendChild(buildLargeModeToggle());
 
     // The reveal controls live below the cards so the header has one clear
     // primary action: the gold Full calendar CTA. See buildHomepage().
@@ -1320,11 +1435,10 @@
       // the visitor's tab management would be presumptuous. Event links
       // point out to LibCal, so those keep opening in a new tab.
       link.textContent = Drupal.t('Full calendar');
-      const chevron = document.createElement('span');
-      chevron.className = 'libcal-gantt-home__cta-arrow';
-      chevron.setAttribute('aria-hidden', 'true');
-      chevron.textContent = '→';
-      link.appendChild(chevron);
+      const arrow = document.createElement('span');
+      arrow.className = 'libcal-gantt-home__cta-arrow fas fa-arrow-right fa-fw';
+      arrow.setAttribute('aria-hidden', 'true');
+      link.appendChild(arrow);
       controls.appendChild(link);
     }
 
@@ -2546,29 +2660,18 @@
     const wrap = document.createElement('div');
     wrap.className = 'libcal-gantt-chart__more libcal-gantt-chart__more--homepage libcal-gantt-home__more';
 
-    // Describe the next band before the visitor commits to revealing it.
-    // The boundary date is known either way, so a date is always named. The
-    // count is only stated once the days are loaded, because past the
-    // loaded range a closure could still make the promise wrong - and for
-    // the same reason the loaded case names the day it will actually end
-    // on, which is the Thursday when that week's Friday is a closure the
-    // feed never listed.
+    // Keep the visible control short and scannable. The date range remains
+    // available as the accessible label, so sighted users get a clean
+    // action while screen-reader users still know what will be revealed.
     const boundary = nextHomepageRevealBoundary(state);
-    const covered = homepageRangeCoversBoundary(state, boundary);
-    const revealCount = homepageRevealCount(state, boundary);
-    const count = Math.max(revealCount - state.homepageVisibleDays, 1);
-    const label = covered
-      ? Drupal.t('Show @count more days · through @date', {
-        '@count': count,
-        '@date': formatDayLabel(state.days[revealCount - 1] || boundary, false),
-      })
-      : Drupal.t('Show more days · through @date', {
-        '@date': formatDayLabel(boundary, false),
-      });
+    const ariaLabel = Drupal.t('Show more days through @date', {
+      '@date': formatDayLabel(boundary, false),
+    });
 
     wrap.appendChild(buildHomepageRevealButton({
-      label: label,
-      chevron: '⌄',
+      label: Drupal.t('Show more'),
+      ariaLabel: ariaLabel,
+      chevronClass: 'fas fa-chevron-down fa-fw',
       extraClass: 'libcal-gantt-chart__more-button',
       ariaControls: state.instanceId + '-homepage-bands',
       ariaExpanded: state.homepageVisibleDays > (state.options.homepageDays || HOMEPAGE_DAYS_PER_REVEAL),
@@ -2603,7 +2706,7 @@
 
     wrap.appendChild(buildHomepageRevealButton({
       label: Drupal.t('Show less'),
-      chevron: '⌃',
+      chevronClass: 'fas fa-chevron-up fa-fw',
       extraClass: 'libcal-gantt-home__more-button--less',
       ariaControls: state.instanceId + '-homepage-bands',
       ariaExpanded: true,
@@ -2629,12 +2732,15 @@
       button.setAttribute('aria-controls', spec.ariaControls);
       button.setAttribute('aria-expanded', spec.ariaExpanded ? 'true' : 'false');
     }
+    if (spec.ariaLabel) {
+      button.setAttribute('aria-label', spec.ariaLabel);
+    }
     button.addEventListener('click', spec.onClick);
 
     const chevron = document.createElement('span');
-    chevron.className = 'libcal-gantt-home__more-arrow';
+    chevron.className = 'libcal-gantt-home__more-arrow'
+      + (spec.chevronClass ? ' ' + spec.chevronClass : '');
     chevron.setAttribute('aria-hidden', 'true');
-    chevron.textContent = spec.chevron;
     button.appendChild(chevron);
 
     return button;
@@ -2951,6 +3057,9 @@
     }
 
     state.homepageVisibleDays = target;
+    const initialCount = (state.options && state.options.homepageDays)
+      || HOMEPAGE_DAYS_PER_REVEAL;
+    state.homepageInitialLayout = target <= initialCount;
     renderChart(container, endpoint, state);
     announceVisibleState(container, state);
     // ORDER MATTERS: focus first, then scroll. Restoring focus is what
@@ -3062,6 +3171,9 @@
     // deciding "reveal through Fri Oct 2" survives the round trip.
     const boundary = nextHomepageRevealBoundary(state);
     const reveal = () => {
+      // This is the point at which the teaser becomes the normal calendar:
+      // future renders, including Show less, use the real week bands.
+      state.homepageInitialLayout = false;
       state.homepageVisibleDays = homepageRevealCount(state, boundary);
     };
 
@@ -5003,12 +5115,14 @@
 
     if (options.loading) {
       button.disabled = true;
+      button.removeAttribute('aria-label');
       button.textContent = Drupal.t('Loading…');
       return;
     }
 
     button.disabled = false;
     if (options.error) {
+      button.removeAttribute('aria-label');
       button.textContent = Drupal.t('Try again');
       const note = document.createElement('p');
       note.className = 'libcal-gantt-chart__more-error';

@@ -303,7 +303,10 @@
   --libcal-gantt-day-min-width: 96px;
   --libcal-gantt-row-height: 3rem;
   --libcal-gantt-weekend-width: 88px;
-  --libcal-gantt-font-size: 0.875rem;
+  /* A small default bump for readability. The large-mode contract below
+     moves this to a stronger step without changing the module's layout
+     mode or requiring a second markup tree. */
+  --libcal-gantt-font-size: 1rem;
 
   /* ---- Event bars ------------------------------------------------------
      Lightened from LSU's #461D7C so a bar still separates from the dark
@@ -852,12 +855,18 @@
   font-size: 0.78em;
   line-height: 1.2;
   cursor: pointer;
-  transition: border-color var(--libcal-gantt-hover-out) ease-in,
+  transition: background var(--libcal-gantt-hover-out) ease-in,
+    border-color var(--libcal-gantt-hover-out) ease-in,
     color var(--libcal-gantt-hover-out) ease-in;
 }
 
-.libcal-gantt-theme-toggle:hover {
+/* Non-gold controls use the same soft surface-fill response as event and
+   library-display rows: the label becomes full-strength while the control
+   settles onto the header surface. */
+.libcal-gantt-theme-toggle:hover,
+.libcal-gantt-theme-toggle:focus-visible {
   border-color: var(--libcal-gantt-today-accent);
+  background: var(--libcal-gantt-header-bg);
   color: var(--libcal-gantt-text);
   transition-duration: var(--libcal-gantt-hover-in);
 }
@@ -1402,7 +1411,7 @@ a.libcal-gantt__weekend-event:focus {
   align-self: center;
   padding: 0.05rem 0.4rem;
   border-radius: 999px;
-  background: var(--libcal-gantt-today-accent);
+  background-color: var(--libcal-gantt-today-accent);
   color: var(--libcal-gantt-today-badge-color);
   font-size: 0.625rem;
   font-weight: 700;
@@ -1825,12 +1834,11 @@ a.libcal-gantt-agenda__link:focus {
   text-align: center;
 }
 
-/* Same pill geometry as the "Full calendar" CTA it sits beside - matched
-   deliberately, since the two are peers in the same bar - but neutral
-   where the CTA is gold. Gold is the block's one accent and it is already
-   spoken for by today and the CTA; a second gold pill would make the
-   header read as two equally important actions, and "show me a bit more"
-   is not equal to "go to the calendar". */
+/* Same pill geometry as the "Full calendar" CTA it sits beside. The
+   reveal is one of the homepage's primary actions, so it gets the same
+   gold emphasis: outlined at rest, filled on hover/focus. Keeping the
+   resting state outlined preserves hierarchy with the CTA while making
+   the control easier to discover than the former muted treatment. */
 .libcal-gantt-home__more-button {
   display: inline-flex;
   align-items: center;
@@ -1838,10 +1846,10 @@ a.libcal-gantt-agenda__link:focus {
   font: inherit;
   cursor: pointer;
   padding: 5px 13px;
-  border: 1px solid var(--libcal-gantt-border);
+  border: 1px solid var(--libcal-gantt-today-accent);
   border-radius: 999px;
   background: none;
-  color: var(--libcal-gantt-text-muted);
+  color: var(--libcal-gantt-today-accent);
   font-size: 0.78em;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -1849,14 +1857,15 @@ a.libcal-gantt-agenda__link:focus {
   text-transform: uppercase;
   white-space: normal;
   transition: border-color var(--libcal-gantt-hover-out) ease-in,
-    color var(--libcal-gantt-hover-out) ease-in;
+    color var(--libcal-gantt-hover-out) ease-in,
+    background-color var(--libcal-gantt-hover-out) ease-in;
 }
 .libcal-gantt-home__more-button:hover:not(:disabled),
 .libcal-gantt-home__more-button:focus-visible {
   transition-duration: var(--libcal-gantt-hover-in);
-  border-color: var(--libcal-gantt-text-muted);
-  color: var(--libcal-gantt-text);
-  background: none;
+  border-color: var(--libcal-gantt-today-accent);
+  color: var(--libcal-gantt-today-badge-color);
+  background: var(--libcal-gantt-today-accent);
 }
 .libcal-gantt-home__more-button:disabled {
   cursor: progress;
@@ -1992,27 +2001,36 @@ a.libcal-gantt-agenda__link:focus {
   text-transform: uppercase;
   text-decoration: none;
   white-space: nowrap;
+  transition: border-color var(--libcal-gantt-hover-out) ease-in,
+    color var(--libcal-gantt-hover-out) ease-in,
+    background-color var(--libcal-gantt-hover-out) ease-in;
 }
 
 /* Matches the pattern in section 2b: the host region declares its own
    link colour, so the CTA needs the element-qualified selector to keep
    its gold in all three states. */
-.libcal-gantt-chart a.libcal-gantt-home__cta,
-.libcal-gantt-chart a.libcal-gantt-home__cta:hover,
-.libcal-gantt-chart a.libcal-gantt-home__cta:focus {
+.libcal-gantt-chart a.libcal-gantt-home__cta {
   color: var(--libcal-gantt-today-accent);
 }
 
-.libcal-gantt-home__cta:hover,
-.libcal-gantt-home__cta:focus {
-  text-decoration: underline;
+/* Gold actions share the homepage Show more treatment: outlined at rest,
+   filled gold on hover/focus, with the ink changing for contrast. Never
+   underline this pill - the colour inversion is its interaction cue. */
+.libcal-gantt-chart a.libcal-gantt-home__cta:hover,
+.libcal-gantt-chart a.libcal-gantt-home__cta:focus-visible {
+  border-color: var(--libcal-gantt-today-accent);
+  background-color: var(--libcal-gantt-today-accent);
+  color: var(--libcal-gantt-today-badge-color);
+  text-decoration: none;
+  transition-duration: var(--libcal-gantt-hover-in);
 }
 
 .libcal-gantt-home__cta-arrow {
   transition: transform var(--libcal-gantt-hover-out) ease-in;
 }
 
-.libcal-gantt-home__cta:hover .libcal-gantt-home__cta-arrow {
+.libcal-gantt-home__cta:hover .libcal-gantt-home__cta-arrow,
+.libcal-gantt-home__cta:focus-visible .libcal-gantt-home__cta-arrow {
   transition-duration: var(--libcal-gantt-hover-in);
   transform: translateX(2px);
 }
@@ -2236,7 +2254,9 @@ a.libcal-gantt-agenda__link:focus {
   top: 50%;
   transform: translateY(-50%);
   color: var(--libcal-gantt-today-accent);
+  font-family: 'Font Awesome 5 Pro';
   font-size: 0.9em;
+  font-weight: 900;
   line-height: 1;
   /* Decoration: the range text beside it carries the same fact in words,
      so this must not be announced as a stray character. */
@@ -2245,12 +2265,12 @@ a.libcal-gantt-agenda__link:focus {
 
 .libcal-gantt-home__item--span.is-clipped-start::before {
   left: 0.5rem;
-  content: '\2039';
+  content: '\f053';
 }
 
 .libcal-gantt-home__item--span.is-clipped-end::after {
   right: 0.5rem;
-  content: '\203a';
+  content: '\f054';
 }
 
 /* A display already introduced in an earlier week band. Quieter chip, so
@@ -2804,9 +2824,10 @@ a.libcal-gantt-home__link:focus .libcal-gantt-home__item-title {
    weekend strip for the space under the cards. */
 .libcal-gantt-home__day-weather {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: baseline;
   justify-content: space-between;
+  min-width: 0;
   column-gap: 0.7em;
   /* Held one step back from the hours: this is nice-to-know, and it must
      never read as an advisory about whether the buildings are open. */
@@ -2828,6 +2849,7 @@ a.libcal-gantt-home__link:focus .libcal-gantt-home__item-title {
 
 .libcal-gantt-home__weather-summary {
   display: flex;
+  flex: 1 1 auto;
   /* center, not baseline: the icon is a square box with no text baseline of
      its own, so baseline alignment would hang it off the bottom of the
      line. */
@@ -2859,6 +2881,8 @@ a.libcal-gantt-home__link:focus .libcal-gantt-home__item-title {
 
 .libcal-gantt-home__weather-temp {
   flex: 0 0 auto;
+  margin-left: auto;
+  white-space: nowrap;
   /* Lands in the same right-hand column as the hours times above, and
      aligns digit-for-digit with them down the week. */
   font-variant-numeric: tabular-nums;
@@ -3928,4 +3952,82 @@ div#block-origami-libcaleventsganttchart {
 div#block-origami-libcaleventsganttchart:has(.libcal-gantt-chart--light),
 .largeBanner .bannerMenus > .libcal-gantt-chart--light {
   --libcal-gantt-wrapper-color: #211a2d;
+}
+
+
+/* =========================================================================
+   16. GLOBAL LARGE TEXT MODE
+   -------------------------------------------------------------------------
+   The site-level toggle adds `large-mode` to <body> and persists that
+   choice in localStorage. This module intentionally listens through CSS
+   only: it stays in sync with the global setting without duplicating the
+   toggle state or its cookie/localStorage behavior.
+
+   Most homepage and agenda type is `em`-based and follows the root size.
+   The explicit rem-sized labels below need their own scale so the small
+   fixed labels do not remain disproportionately tiny in large mode.
+   ========================================================================= */
+
+body.large-mode .libcal-gantt-chart {
+  --libcal-gantt-font-size: 1.125rem;
+  --libcal-gantt-large-text-scale: 1.2;
+}
+
+body.large-mode .libcal-gantt-chart .libcal-gantt-chart__overlay-box,
+body.large-mode .libcal-gantt-chart .libcal-gantt-chart__notice,
+body.large-mode .libcal-gantt-chart .libcal-gantt__bar-label,
+body.large-mode .libcal-gantt-chart .libcal-gantt-agenda__hours,
+body.large-mode .libcal-gantt-chart .libcal-gantt-agenda__empty,
+body.large-mode .libcal-gantt-chart .libcal-gantt-agenda__time,
+body.large-mode .libcal-gantt-chart .libcal-gantt-agenda__location,
+body.large-mode .libcal-gantt-chart .libcal-gantt-agenda__weekend-title,
+body.large-mode .libcal-gantt-chart .libcal-gantt-agenda__weekend-hours-line {
+  font-size: calc(0.8125rem * var(--libcal-gantt-large-text-scale));
+}
+
+body.large-mode .libcal-gantt-chart .libcal-gantt-tabs__tab,
+body.large-mode .libcal-gantt-chart .libcal-gantt__weekend-cell {
+  font-size: calc(0.75rem * var(--libcal-gantt-large-text-scale));
+}
+
+body.large-mode .libcal-gantt-chart .libcal-gantt-agenda-filter__tab,
+body.large-mode .libcal-gantt-chart .libcal-gantt__weekend-event-time,
+body.large-mode .libcal-gantt-chart .libcal-gantt__weekend-more,
+body.large-mode .libcal-gantt-chart .libcal-gantt__bar-time,
+body.large-mode .libcal-gantt-chart .libcal-gantt__bar-location,
+body.large-mode .libcal-gantt-chart .libcal-gantt__hours-caption,
+body.large-mode .libcal-gantt-chart .libcal-gantt-agenda__tag {
+  font-size: calc(0.6875rem * var(--libcal-gantt-large-text-scale));
+}
+
+body.large-mode .libcal-gantt-chart
+  .libcal-gantt-chart__more-button:not(.libcal-gantt-home__more-button) {
+  font-size: calc(0.875rem * var(--libcal-gantt-large-text-scale));
+}
+
+body.large-mode .libcal-gantt-chart .libcal-gantt__day-header-today {
+  font-size: calc(0.625rem * var(--libcal-gantt-large-text-scale));
+}
+
+body.large-mode .libcal-gantt-chart .libcal-gantt__bar-tag {
+  font-size: calc(0.5625rem * var(--libcal-gantt-large-text-scale));
+}
+
+
+/* Paired display controls: theme and large-mode toggles. */
+.libcal-gantt-display-toggles {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.libcal-gantt-large-mode-toggle {
+  white-space: nowrap;
+}
+
+.libcal-gantt-large-mode-toggle__label {
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
