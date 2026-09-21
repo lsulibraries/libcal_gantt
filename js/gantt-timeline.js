@@ -125,18 +125,18 @@
   const HOMEPAGE_DAYS_PER_REVEAL = 3;
 
   /**
-   * How many grid tracks a week band gets ONCE THE VISITOR HAS EXPANDED.
-   * Five - one per weekday - so bands of three, four and five cards all
-   * present the same card width down the column instead of three
-   * different widths stacked on each other.
+   * The full-week track count: one per weekday, and the ceiling no band
+   * goes past.
    *
-   * It is deliberately NOT applied to the unexpanded teaser. Forcing five
-   * tracks on a first render of three cards leaves two empty tracks
-   * painting as gaps, which is the opposite of what the teaser is for:
-   * three cards filling the block's width, readable at a glance, no
-   * dead space. So the track count is written onto the band container as
-   * a custom property - the card count while collapsed, five after the
-   * first reveal - and the CSS reads it. See buildHomepage().
+   * It is no longer imposed on every expanded band. It was, for a good
+   * reason - equal card widths down the block, so every card resolves the
+   * question of whether its weekday name fits the same way - but the two
+   * bands that are never a full week paid for it in blank tracks: the first
+   * band starts at today, so on a Friday it held one card in five tracks
+   * and four fifths of the block was empty surface. Each band now sizes
+   * itself to the days it actually holds (see bandSizes in buildHomepage()),
+   * and this is what a band falls back to when its own count is unknown,
+   * plus the stylesheet's default.
    */
   const HOMEPAGE_WEEK_TRACKS = 5;
 
@@ -1110,18 +1110,18 @@
 
     const days = state.days.slice(0, state.homepageVisibleDays);
 
-    // TWO SIZING MODES, and the whole difference between them is the track
-    // count handed to the CSS.
+    // TRACK COUNTS, and the rule is the same one in both modes now: a grid
+    // gets as many tracks as it has cards, so the cards divide the width
+    // between them and nothing reserves space for a day that is not there.
     //
     // Collapsed (first render, `homepageDays` cards, three by default) is a
-    // TEASER: as many tracks as there are cards, so the cards divide the
-    // full width between them and the block stays the compact strip that
-    // earns its place at the top of the homepage.
+    // TEASER: one grid, as many tracks as there are cards, the compact strip
+    // that earns its place at the top of the homepage.
     //
-    // Expanded (any state past the first reveal) is a CALENDAR: five fixed
-    // weekday tracks, so a four-card band and a five-card band below it
-    // line up column for column and every card makes the same decision
-    // about whether its weekday name fits.
+    // Expanded is a CALENDAR of one grid per week band, and each band sets
+    // its own count from its own days - see bandSizes below. This container
+    // property is the value the teaser uses and the fallback an expanded
+    // band inherits if it never sets one.
     //
     // Read from `days.length`, not from the option, so a feed that returns
     // fewer days than configured still fills the width rather than
@@ -1238,11 +1238,56 @@
       band.className = 'libcal-gantt-home__days';
       band.setAttribute('role', 'group');
       band.setAttribute('aria-labelledby', weekHeading.id);
+      // THIS BAND'S OWN TRACK COUNT, so a band that is not a full week
+      // still fills the width instead of leaving dead tracks at one end -
+      // see bandSizes below for why it is not simply five.
+      if (expanded) {
+        band.style.setProperty(
+          '--libcal-gantt-band-tracks',
+          String(bandSizes.get(firstDay) || HOMEPAGE_WEEK_TRACKS)
+        );
+      }
       bands.appendChild(band);
       return band;
     };
 
     const marked = new Set(weekendByAfter.keys());
+
+    // HOW MANY CARDS EACH BAND WILL HOLD, worked out before any of them are
+    // built, because a band has to size its grid the moment it is created
+    // and at that point the loop has only reached its first day.
+    //
+    // This is what stops an expanded band from reserving tracks for days it
+    // does not have. A fixed five per band is right for a full week and
+    // wrong for the two that are never full: the first band starts at today
+    // and the last stops wherever the feed's window ends. On a Friday the
+    // first band is ONE day in five tracks - one card and its displays in a
+    // fifth of the block, the other four fifths blank surface. Nothing is
+    // misplaced in that layout and it still reads as broken, which is the
+    // whole argument against it.
+    //
+    // Sizing each band to its own days costs the property the fixed count
+    // was bought for - cards are no longer the same width in every band, so
+    // a narrow container can spell a weekday out in one band and abbreviate
+    // it in the next - and that is a smaller price than a block that looks
+    // like it failed to render. Every card states its own date either way.
+    //
+    // Split on the SAME test the render loop uses, so the two cannot
+    // disagree about where a band ends; the final day closes the last band
+    // whether or not it happens to be a Friday.
+    const bandSizes = new Map();
+    let sizingFirstDay = null;
+    let sizingCount = 0;
+    days.forEach((day, index) => {
+      if (!sizingCount) {
+        sizingFirstDay = day;
+      }
+      sizingCount += 1;
+      if (isBandEnd(days, index, marked) || index === days.length - 1) {
+        bandSizes.set(sizingFirstDay, sizingCount);
+        sizingCount = 0;
+      }
+    });
 
     days.forEach((day, index) => {
       const currentBand = band || startBand(day);
@@ -1606,33 +1651,88 @@
       return { event: event, first: first, last: last };
     }).filter(Boolean).sort((a, b) => a.first - b.first || a.last - b.last);
 
-    const laneEnds = [];
+    // THE DISPLAY'S WHOLE RUN, indexed once for the loop below. Each record
+    // reaching this function covers one calendar week of one display (see
+    // getRenderableEvents()), which is not the same fact as how long the
+    // display is up - and the range text and the clipped ends are both
+    // claims about the latter.
+    //
+    // DISPLAYS ONLY, here and in the join below. Both exist to undo the
+    // per-week merge, and that merge only happens for Library Displays: an
+    // Events span is one whole event object already, so unioning by title
+    // would be inventing a run rather than restoring one - two separate
+    // multi-day events sharing a title would report each other's dates.
+    const runsByIdentity = displayCalendar ? collectDisplayRuns(spanEvents) : new Map();
+
+    // ONE BAR PER DISPLAY PER BAND, even where the records say otherwise.
+    // Merging per week is right for every band that IS a week, and wrong
+    // for the one band that is not: the collapsed teaser deliberately puts
+    // Thursday, Friday and Monday in a single row (see buildHomepage()), so
+    // a display running through that weekend arrives here as two records -
+    // one for the week ending Friday, one for the week starting Monday.
+    // Drawn as they arrived, they packed into the SAME LANE as two bars
+    // carrying the same title, the second badged "Continues": one exhibit
+    // apparently listed twice in one three-column row.
+    //
+    // Joined only when the two runs are column-ADJACENT (`last + 1`), so a
+    // display genuinely down for one of the days on screen keeps its gap
+    // instead of having a bar painted over it.
+    const openSpans = new Map();
+    const bars = [];
     spans.forEach((span) => {
+      if (!displayCalendar) {
+        bars.push(span);
+        return;
+      }
+      const identity = displayIdentity(span.event);
+      const open = openSpans.get(identity);
+      if (open && span.first <= open.last + 1) {
+        open.last = Math.max(open.last, span.last);
+        open.event = mergeDisplayRecords(open.event, span.event);
+        return;
+      }
+      openSpans.set(identity, span);
+      bars.push(span);
+    });
+
+    const laneEnds = [];
+    bars.forEach((span) => {
       let lane = laneEnds.findIndex((end) => end < span.first);
       if (lane === -1) {
         lane = laneEnds.length;
       }
       laneEnds[lane] = span.last;
-      // The run as the DATA has it, not as this band shows it. A bar
-      // clipped by the visible window used to be indistinguishable from a
-      // display that genuinely ends on Thursday.
-      const runDays = Object.keys(span.event.segments || {}).sort();
-      const clippedStart = !!runDays.length && runDays[0] < bandDays[0];
-      const clippedEnd = !!runDays.length && runDays[runDays.length - 1] > bandDays[bandDays.length - 1];
-
       // Identity WITHOUT the week, so the same display recognised in a
       // later band reads as a continuation rather than as news. The
       // merged records are per-week by construction (see
       // getRenderableEvents()), so week two of one exhibit is a different
       // object with the same identity.
-      const identity = [span.event.row, span.event.location || '', span.event.title || '']
-        .join(MERGE_KEY_SEPARATOR);
+      const identity = displayIdentity(span.event);
+
+      // The run as the DATA has it, not as this band shows it - and as the
+      // WHOLE DISPLAY has it, not as this week's record does. A bar clipped
+      // by the visible window used to be indistinguishable from a display
+      // that genuinely ends on Thursday; read from one week's record, it
+      // was worse than indistinguishable. A display up from Thursday until
+      // the following Friday reached its Thursday/Friday band as a record
+      // whose own segments stopped on the Friday, so the bar closed off
+      // there and its range text said "Sep 17 - Sep 18" - two weeks of
+      // exhibit reported as two days - while the continuation sat in the
+      // very next band. Whether the chevron appeared at all came down to
+      // whether the venue happened to be open on the Sunday, since a
+      // Sunday segment was the only thing that pushed that record's last
+      // day past the band's.
+      const runDays = runsByIdentity.get(identity)
+        || Object.keys(span.event.segments || {}).sort();
+      const clippedStart = !!runDays.length && runDays[0] < bandDays[0];
+      const clippedEnd = !!runDays.length && runDays[runDays.length - 1] > bandDays[bandDays.length - 1];
+
       const continued = !!(seenDisplays && seenDisplays.has(identity));
       if (seenDisplays) {
         seenDisplays.add(identity);
       }
 
-      const item = buildHomepageItem(span.event, formatDisplayRange(span.event), 'div');
+      const item = buildHomepageItem(span.event, formatDayKeyRange(runDays), 'div');
       item.classList.add('libcal-gantt-home__item--span');
       if (clippedStart) {
         item.classList.add('is-clipped-start');
@@ -1666,7 +1766,7 @@
       if (place) {
         nameParts.push(place);
       }
-      const spanRange = formatDisplayRange(span.event);
+      const spanRange = formatDayKeyRange(runDays);
       if (spanRange) {
         nameParts.push(spanRange);
       }
@@ -5252,6 +5352,68 @@
   }
 
   /**
+   * What makes two records the same DISPLAY: the row, the location and the
+   * title, and deliberately not the week. getRenderableEvents() keys its
+   * merge on this plus the week, so one exhibit running a fortnight is two
+   * records sharing one identity - which is exactly what lets a later band
+   * say "Continues" and what lets appendHomepageSpans() draw a single bar
+   * when both records land in the same band.
+   */
+  function displayIdentity(event) {
+    return [event.row, event.location || '', event.title || ''].join(MERGE_KEY_SEPARATOR);
+  }
+
+  /**
+   * Every day each display is up for, unioned back across the per-week
+   * records, keyed by identity. This is the fact the bars need and the one
+   * the records individually cannot answer: "how long is this display up?"
+   * is a question about the exhibit, not about the calendar week the
+   * visitor happens to be looking at.
+   *
+   * Sorted day keys (ISO, so lexical order is chronological), so callers
+   * can read the first and last entries as the ends of the run.
+   */
+  function collectDisplayRuns(events) {
+    const runs = new Map();
+    (events || []).forEach((event) => {
+      const identity = displayIdentity(event);
+      let days = runs.get(identity);
+      if (!days) {
+        days = new Set();
+        runs.set(identity, days);
+      }
+      Object.keys(event.segments || {}).forEach((day) => days.add(day));
+    });
+    const sorted = new Map();
+    runs.forEach((days, identity) => sorted.set(identity, Array.from(days).sort()));
+    return sorted;
+  }
+
+  /**
+   * Two per-week records of one display, joined into the record a single
+   * bar can be built from.
+   *
+   * A NEW OBJECT every time: these records are held on `state` and reused
+   * by every later render, so growing one in place would leave the second
+   * week's days attached to the first week's record for the rest of the
+   * page's life - and the next Show more would draw from it.
+   *
+   * `ongoing` is true by construction: joining happens only when two
+   * records occupy adjacent columns of one band, which is more than one day
+   * on view. The url and image are taken from whichever record has them,
+   * because LibCal fills those in per occurrence and the second week's
+   * occurrence is as likely to carry the flyer as the first.
+   */
+  function mergeDisplayRecords(first, second) {
+    return Object.assign({}, first, {
+      segments: Object.assign({}, first.segments, second.segments),
+      url: first.url || second.url,
+      image: first.image || second.image,
+      ongoing: true,
+    });
+  }
+
+  /**
    * Calendar ids compared as text, in one place. The settings form's keys
    * can be numeric LibCal ids (arriving as JSON numbers) or names
    * (arriving as strings), and the same id reaches this file from two
@@ -6034,13 +6196,16 @@
   }
 
   /**
-   * "Sep 15 - Oct 3" for a merged display, or one date when the run is a
-   * single day. Read from the event's OWN segments rather than from the
-   * days currently on screen: the visitor's question is how long the
-   * display is up, not how much of it this week happens to show.
+   * "Sep 15 - Oct 3" for a run of day keys, or one date when the run is a
+   * single day.
+   *
+   * Takes the DAYS rather than an event, because the run a display bar has
+   * to state is not the run any one record carries - see
+   * collectDisplayRuns(), and formatDisplayRange() below for the
+   * single-record callers.
    */
-  function formatDisplayRange(event) {
-    const days = Object.keys(event.segments || {}).sort();
+  function formatDayKeyRange(dayKeys) {
+    const days = (dayKeys || []).slice().sort();
     if (!days.length) {
       return '';
     }
@@ -6059,6 +6224,16 @@
     const from = shortDate(days[0]);
     const to = shortDate(days[days.length - 1]);
     return from === to ? from : Drupal.t('@from \u2013 @to', { '@from': from, '@to': to });
+  }
+
+  /**
+   * "Sep 15 - Oct 3" for a merged display, or one date when the run is a
+   * single day. Read from the event's OWN segments rather than from the
+   * days currently on screen: the visitor's question is how long the
+   * display is up, not how much of it this week happens to show.
+   */
+  function formatDisplayRange(event) {
+    return formatDayKeyRange(Object.keys(event.segments || {}));
   }
 
   function formatDayLabel(day, long) {

@@ -2134,31 +2134,30 @@ a.libcal-gantt-agenda__link:focus {
 
 .libcal-gantt-home__days {
   /* TRACK COUNT COMES FROM THE JS, which sets
-     `--libcal-gantt-band-tracks` on the band container: the number of
-     cards while the block is the collapsed teaser, five - one per weekday
-     - once it has been expanded. The `5` here is only the fallback for a
-     band rendered without the property.
+     `--libcal-gantt-band-tracks` on each band while it is being built: the
+     number of cards that band holds. The `5` here is only the fallback for
+     a band rendered without the property.
 
-     Why the two modes. Expanded, a band is almost never a full week: the
-     first starts at today (four cards on a Tuesday) and the last stops
-     wherever the server window ends (three cards). Sized to their
-     contents, those bands came out at three different card widths stacked
-     on each other, and because each card decides whether to spell its
-     weekday out from ITS OWN width, the block showed "TUESDAY, SEP 15" in
-     one row and "TUE, SEP 22" in the next. Fixing the tracks to five
-     makes every card the same width, so every card resolves that question
-     the same way and the rows line up.
+     PER BAND, not per block, and that is the correction. Expanded, a band
+     is almost never a full week - the first starts at today, the last stops
+     wherever the server window ends - and a fixed five tracks made those
+     short bands reserve space for cards that do not exist. On a Friday the
+     first band was one card in five tracks: a fifth of the block in use and
+     four fifths blank. Sized to its own days, every band fills the width,
+     and a display bar running to the end of its band now ends at the
+     block's edge instead of a fifth of the way across it.
 
-     Collapsed, that same rule is wrong: three cards in five tracks leave
-     two tracks empty and the teaser reads as a half-empty shelf. Three
-     cards in three tracks fill the width, which is the compact
-     at-a-glance strip the top of the homepage is paying for.
+     What the fixed count bought was equal card widths down the whole block,
+     which is also how each card came to the same conclusion about whether
+     to spell its weekday out. That is given up here: in a container narrow
+     enough for the question to be live, a one-card band can read "FRIDAY,
+     SEP 18" above a five-card band reading "MON, SEP 21". Every card still
+     carries its own full date, and the alternative was a block that looked
+     like it had failed to render.
 
-     The leftover tracks an expanded short band does have show blank
-     surface rather than dark holes, because the dividers below are drawn
-     as card borders and this element's background is the card colour -
-     not the divider colour a coloured backdrop would have shown through
-     the gaps. */
+     Leftover tracks no longer arise, but the background is still the card
+     colour rather than the divider colour, so any that ever did would show
+     blank surface instead of dark holes. */
   display: grid;
   grid-template-columns: repeat(var(--libcal-gantt-band-tracks, 5), minmax(0, 1fr));
   background: var(--libcal-gantt-block-bg);
@@ -2244,8 +2243,15 @@ a.libcal-gantt-agenda__link:focus {
   grid-column: var(--libcal-gantt-span-from, 1) / span var(--libcal-gantt-span-span, 1);
   grid-row: var(--libcal-gantt-span-lane, 2);
   min-width: 0;
-  margin: 0.375rem;
-  padding: 0 0.5rem;
+
+  /* Named because the row inside the bar has to restate them to bleed back
+     out over them - see the full-bleed rule below - and because the clipped
+     ends change them. Setting the variable rather than the padding keeps
+     those two facts in one place: change an end's inset and the bleed
+     follows it. */
+  --libcal-gantt-span-pad-left: 0.5rem;
+  --libcal-gantt-span-pad-right: 0.5rem;
+  padding: 0 var(--libcal-gantt-span-pad-right) 0 var(--libcal-gantt-span-pad-left);
   border: 1px solid var(--libcal-gantt-border-subtle);
   border-left: 3px solid var(--libcal-gantt-today-accent);
   background: var(--libcal-gantt-block-bg);
@@ -2253,6 +2259,33 @@ a.libcal-gantt-agenda__link:focus {
 
 .libcal-gantt-home__item--span + .libcal-gantt-home__item--span {
   border-top: 1px solid var(--libcal-gantt-border-subtle);
+}
+
+/* FULL-BLEED BAR, TEXT UNMOVED. Same trick as the card rows in section 13,
+   for the same reason and against a sharper symptom.
+
+   The bar is the item; everything paintable inside it - the hover fill and
+   the featured image (section 13e) - belongs to the LINK, which sat inside
+   the bar's own 0.5rem end padding. So the bar's fill stopped half a
+   centimetre short of the bar's border on both sides. On a clipped end that
+   padding is 1.5rem to clear the chevron, and the effect there was not a
+   subtle inset: the image's hard right cut landed a quarter-inch inside a
+   bar whose whole job is to say "this continues past Friday", leaving a
+   bare strip exactly where the eye looks for the bar to run off the edge.
+   The bar looked mis-measured against the column it spans.
+
+   The negative end margins grow the link out to the bar's padding box; the
+   matching padding puts the text back on the pixel it was already on, so no
+   title moves and no line rewraps. Both driven by the same variables the
+   bar sets, so the clipped ends' wider gutters bleed by exactly their own
+   width rather than by a number repeated here.
+
+   Vertical is already covered: the image layer is `inset: 0` against the
+   link's padding box, and the bar has no block padding of its own to
+   escape. */
+.libcal-gantt-home__item--span .libcal-gantt-home__link {
+  margin-inline: calc(-1 * var(--libcal-gantt-span-pad-left)) calc(-1 * var(--libcal-gantt-span-pad-right));
+  padding-inline: var(--libcal-gantt-span-pad-left) var(--libcal-gantt-span-pad-right);
 }
 
 /* The bar measures a duration against the weekday columns, so its ends
@@ -2263,14 +2296,14 @@ a.libcal-gantt-agenda__link:focus {
 .libcal-gantt-home__item--span.is-clipped-start {
   margin-left: 0;
   border-left-width: 3px;
-  padding-left: 1.5rem;
+  --libcal-gantt-span-pad-left: 1.5rem;
   position: relative;
 }
 
 .libcal-gantt-home__item--span.is-clipped-end {
   margin-right: 0;
   border-right: 0;
-  padding-right: 1.5rem;
+  --libcal-gantt-span-pad-right: 1.5rem;
   position: relative;
 }
 
@@ -2284,6 +2317,13 @@ a.libcal-gantt-agenda__link:focus {
   font-size: 0.9em;
   font-weight: 900;
   line-height: 1;
+  /* ABOVE THE BAR'S OWN FILL, and legible over it. The chevron sits in the
+     end gutter, which the link now bleeds into (see the full-bleed rule
+     above), so on an image-backed bar it is a gold glyph over a photograph
+     rather than over flat surface. Same shadow the bar text uses in section
+     9, which is a no-op in the light theme where the surface is pale. */
+  z-index: 1;
+  text-shadow: var(--libcal-gantt-bar-text-shadow);
   /* Decoration: the range text beside it carries the same fact in words,
      so this must not be announced as a stray character. */
   content: '';
@@ -3828,7 +3868,17 @@ a.libcal-gantt-agenda__link.has-image:focus::after {
     margin: 0;
     border-top: 1px solid var(--libcal-gantt-border-subtle);
     border-bottom: 1px solid var(--libcal-gantt-border-subtle);
-    padding: 0.5rem 0.75rem;
+
+    /* Roomier ends than the desktop bar, stated through the same variables
+       so the link's full-bleed (section 13d) bleeds by what the bar
+       actually uses here. A shorthand `padding: 0.5rem 0.75rem` would have
+       left the bleed reaching for the desktop 0.5rem and pulled every
+       title 4px left of where its own padding put it. The clipped-end
+       rules still win on the variable, which is right: the chevrons are
+       drawn at this width too and still need their gutter. */
+    --libcal-gantt-span-pad-left: 0.75rem;
+    --libcal-gantt-span-pad-right: 0.75rem;
+    padding: 0.5rem var(--libcal-gantt-span-pad-right) 0.5rem var(--libcal-gantt-span-pad-left);
   }
 
   .libcal-gantt-home__item--span + .libcal-gantt-home__item--span {
