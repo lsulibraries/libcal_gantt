@@ -3868,17 +3868,6 @@ a.libcal-gantt-agenda__link.has-image:focus::after {
     margin: 0;
     border-top: 1px solid var(--libcal-gantt-border-subtle);
     border-bottom: 1px solid var(--libcal-gantt-border-subtle);
-
-    /* Roomier ends than the desktop bar, stated through the same variables
-       so the link's full-bleed (section 13d) bleeds by what the bar
-       actually uses here. A shorthand `padding: 0.5rem 0.75rem` would have
-       left the bleed reaching for the desktop 0.5rem and pulled every
-       title 4px left of where its own padding put it. The clipped-end
-       rules still win on the variable, which is right: the chevrons are
-       drawn at this width too and still need their gutter. */
-    --libcal-gantt-span-pad-left: 0.75rem;
-    --libcal-gantt-span-pad-right: 0.75rem;
-    padding: 0.5rem var(--libcal-gantt-span-pad-right) 0.5rem var(--libcal-gantt-span-pad-left);
   }
 
   .libcal-gantt-home__item--span + .libcal-gantt-home__item--span {
