@@ -84,6 +84,12 @@ libcal_gantt.settings:
     weather_cache_ttl:
       type: integer
       label: 'Weather cache lifetime in seconds'
+    show_on_this_day:
+      type: boolean
+      label: 'Show Wikipedia "On this day" facts on empty homepage days'
+    on_this_day_cache_ttl:
+      type: integer
+      label: '"On this day" cache lifetime in seconds'
 
 # Per-block-instance DISPLAY settings, as opposed to the feed settings
 # above. Split this way so the same LibCal feed can be placed twice - a

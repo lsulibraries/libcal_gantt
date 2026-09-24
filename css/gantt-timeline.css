@@ -2081,45 +2081,9 @@ a.libcal-gantt-agenda__link:focus {
   background: var(--libcal-gantt-border-subtle);
 }
 
-.libcal-gantt-home__week-heading {
-  margin: 0;
-  padding: 0.45rem 0.75rem;
-  background: var(--libcal-gantt-header-bg);
-  color: var(--libcal-gantt-text-muted);
-  font-size: 0.72em;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-/* Visually hidden, still announced. The first band's heading is redundant
-   on screen - the today card beside it is outlined and badged - but it is
-   the accessible name of that band's group and the block's only h3, so it
-   has to stay in the accessibility tree. See startBand() for why only the
-   first one.
-
-   Not `display: none` and not `visibility: hidden`: both of those take the
-   element out of the accessibility tree too, which would leave a
-   role="group" with no name. This is the standard clip pattern, spelled out
-   here rather than borrowed from the theme so the block does not depend on
-   a `visually-hidden` class it cannot guarantee is present.
-
-   Taking it out of flow also cleans up after itself: `.libcal-gantt-home__bands`
-   draws its hairlines with `gap` over a background, so an in-flow hidden
-   heading would still reserve a gap and leave a stray 1px rule across the
-   top of the block. */
-.libcal-gantt-home__week-heading--offscreen {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  clip-path: inset(50%);
-  border: 0;
-  white-space: nowrap;
-}
+/* No week headings: the "Week of ..." h3 that used to open each band was
+   removed (see startBand() in gantt-timeline.js). Bands are now named for
+   assistive technology with aria-label, so there is nothing to style. */
 
 .libcal-gantt-home__reveal {
   display: flex;
@@ -2796,6 +2760,78 @@ a.libcal-gantt-home__link:focus .libcal-gantt-home__item-title {
   color: var(--libcal-gantt-text-muted);
   font-size: 0.8em;
   font-style: italic;
+}
+
+/* ---- Wikipedia "On this day" (empty days only) ---- */
+
+/* Filler for a card with nothing scheduled, so it must never read as an
+   event. It gets none of the item styling - no time chip, no venue tag, no
+   image wash - and sits behind a hairline rule under "Nothing scheduled",
+   in the muted text colour, at the same size as the room line of an event.
+
+   Clamped to four lines. A card is stretched to its row's tallest member,
+   so an unclamped anniversary could make an EMPTY day the tallest card in
+   the row and push the busy days' hours strips down with it. The server
+   already prefers short facts (OnThisDayClient::PREFERRED_MAX_LENGTH); the
+   clamp is the backstop, and the full text is one click away. */
+.libcal-gantt-home__fact {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 0.55rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--libcal-gantt-border);
+  color: var(--libcal-gantt-text-muted);
+  font-size: 0.74em;
+  line-height: 1.35;
+}
+
+.libcal-gantt-home__fact-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  font-size: 0.92em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.libcal-gantt-home__fact-icon {
+  flex: 0 0 auto;
+  opacity: 0.75;
+}
+
+.libcal-gantt-home__fact-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  overflow: hidden;
+  margin: 0;
+  overflow-wrap: break-word;
+}
+
+.libcal-gantt-home__fact-source {
+  align-self: flex-start;
+  color: var(--libcal-gantt-today-date-color);
+  font-size: 0.95em;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.libcal-gantt-home__fact-source::after {
+  content: " \2197";
+}
+
+.libcal-gantt-home__fact-source:hover,
+.libcal-gantt-home__fact-source:focus {
+  text-decoration: underline;
+}
+
+.libcal-gantt-home__fact-source:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
 }
 
 .libcal-gantt-home__day-hours {

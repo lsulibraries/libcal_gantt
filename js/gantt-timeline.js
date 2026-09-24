@@ -331,6 +331,18 @@
       // paged past today, or the weather service didn't answer; all four
       // look the same here on purpose, since all four render nothing.
       weather: {},
+      // Wikipedia "On this day" anniversaries, day => list, for the quiet
+      // weekdays the server found in this calendar tab (see
+      // GanttEventsController / OnThisDayClient). Empty whenever the
+      // feature is off or Wikipedia did not answer - both render nothing.
+      onThisDay: {},
+      // Which fact each day card shows, as an index into onThisDay[day].
+      // Chosen at random the first time a card needs one and then kept for
+      // the life of the page, so the pick changes on every page LOAD but
+      // not every time the block re-renders (the live-refresh tick, Show
+      // more/less, a calendar tab switch) - a fact that swapped under the
+      // visitor's eyes every minute would read as a glitch.
+      onThisDayPicks: {},
     };
 
     loadPage(container, endpoint, state, true);
@@ -614,6 +626,11 @@
     if (requestedCalendarId) {
       url += '&calendar=' + encodeURIComponent(requestedCalendarId);
     }
+    // Only the homepage teaser draws "On this day" facts, so only it asks
+    // for them - the full grid never makes the server call Wikipedia.
+    if (state.options.renderMode === 'homepage') {
+      url += '&facts=1';
+    }
 
     fetch(url, { headers: { Accept: 'application/json' } })
       .then((response) => {
@@ -889,6 +906,10 @@
     state.weekends = [];
     state.weekendHours = {};
     state.weather = {};
+    // The facts are cleared because which days are QUIET depends on the
+    // calendar. The picks are not: they are keyed by date, so a day that is
+    // empty in both tabs keeps showing the same anniversary.
+    state.onThisDay = {};
     state.homepageVisibleDays = state.options.homepageDays;
     state.homepageInitialLayout = true;
     state.agendaVisibleDayCount = null;
@@ -967,6 +988,16 @@
     // what the first page already delivered - so this only ever adds.
     if (data.weather && typeof data.weather === 'object') {
       Object.assign(state.weather, data.weather);
+    }
+
+    // Same flat day => list shape and the same only-ever-adds merge: each
+    // "Show more" page brings the facts for its own quiet days.
+    if (data.onThisDay && typeof data.onThisDay === 'object' && !Array.isArray(data.onThisDay)) {
+      Object.keys(data.onThisDay).forEach((day) => {
+        if (Array.isArray(data.onThisDay[day]) && data.onThisDay[day].length) {
+          state.onThisDay[day] = data.onThisDay[day];
+        }
+      });
     }
   }
 
@@ -1198,46 +1229,25 @@
     // strips are collected and placed after that row so Monday can occupy
     // the third slot instead of being pushed below the weekend divider.
     const teaserWeekends = [];
-    // THE FIRST BAND'S HEADING IS HIDDEN FROM SIGHT, NOT FROM THE PAGE.
+    // NO "WEEK OF" HEADINGS. Each band used to open with an h3 reading
+    // "Week of Sep 15" (hidden from sight on the first band only). They are
+    // gone from the page entirely: every card already states its own date,
+    // the weekend strip already separates one week from the next once Show
+    // more has been pressed, and the headings cost a row of the scarcest
+    // vertical space on the homepage.
     //
-    // It is the one heading nobody asked for: it renders on load, directly
-    // under the block's own header, and says "Week of Sep 15" above a row
-    // of cards whose first card is already outlined, badged "Today" and
-    // marked aria-current. Two labels for one week, and the redundant one
-    // is on top - so it reads as a second header stacked on a header and
-    // pushes the cards further down the scarcest space on the homepage.
-    //
-    // Every LATER heading earns its keep, which is why this is not a rule
-    // about week headings in general: those appear only after Show more,
-    // where they are the separator that tells you the run of cards you were
-    // reading has ended and a new week has started. Hiding those would
-    // leave a continuous strip of twelve cards with nothing to break it.
-    //
-    // Kept in the DOM rather than skipped, because it is doing two jobs
-    // that have nothing to do with being seen: it is the accessible name of
-    // this band's role="group" (aria-labelledby, below - a named group is
-    // how a screen reader user can skip a week they do not care about), and
-    // it is this block's only h3, so removing it would leave the day cards
-    // hanging off the block heading with a level missing from the outline.
-    let bandsStarted = 0;
+    // What they used to do for assistive technology is kept without them:
+    // the band is still a role="group", now named with aria-label instead
+    // of aria-labelledby pointing at a heading, so a screen reader user can
+    // still recognise and skip a whole week.
     const startBand = (firstDay) => {
       bandDays = [firstDay];
-      const weekHeading = document.createElement('h3');
-      weekHeading.className = 'libcal-gantt-home__week-heading';
-      if (bandsStarted === 0) {
-        weekHeading.classList.add('libcal-gantt-home__week-heading--offscreen');
-      }
-      bandsStarted += 1;
-      weekHeading.id = state.instanceId + '-week-' + firstDay;
-      weekHeading.textContent = Drupal.t('Week of @date', {
-        '@date': formatDayLabel(firstDay, true),
-      });
-      bands.appendChild(weekHeading);
-
       band = document.createElement('div');
       band.className = 'libcal-gantt-home__days';
       band.setAttribute('role', 'group');
-      band.setAttribute('aria-labelledby', weekHeading.id);
+      band.setAttribute('aria-label', Drupal.t('Week of @date', {
+        '@date': formatDayLabel(firstDay, true),
+      }));
       // THIS BAND'S OWN TRACK COUNT, so a band that is not a full week
       // still fills the width instead of leaving dead tracks at one end -
       // see bandSizes below for why it is not simply five.
@@ -1600,6 +1610,15 @@
       empty.className = 'libcal-gantt-home__empty';
       empty.textContent = Drupal.t('Nothing scheduled');
       card.appendChild(empty);
+      // "Nothing scheduled" STAYS, above the fact rather than replaced by
+      // it: it is the answer to the question the card exists for, and
+      // without it a visitor skimming the row could take the anniversary
+      // for an event.
+      const fact = buildHomepageFact(day, state);
+      if (fact) {
+        card.appendChild(fact);
+        card.classList.add('libcal-gantt-home__day--has-fact');
+      }
     }
 
     // Keep opening hours visible on every card. The hours answer a separate
@@ -1622,6 +1641,91 @@
     }
 
     return card;
+  }
+
+  /**
+   * Chooses the "On this day" fact for one day card, or null.
+   *
+   * Random per page load, stable per render - see `onThisDayPicks` in the
+   * initial state. The stored index is re-rolled only if it no longer
+   * points into the list (a list that shrank after a calendar switch).
+   */
+  function pickOnThisDayFact(state, day) {
+    const facts = state.onThisDay && state.onThisDay[day];
+    if (!Array.isArray(facts) || !facts.length) {
+      return null;
+    }
+    const picks = state.onThisDayPicks || (state.onThisDayPicks = {});
+    const current = picks[day];
+    if (typeof current !== 'number' || current < 0 || current >= facts.length) {
+      picks[day] = Math.floor(Math.random() * facts.length);
+    }
+    const fact = facts[picks[day]];
+    return fact && typeof fact.text === 'string' && fact.text ? fact : null;
+  }
+
+  /**
+   * One Wikipedia "On this day" anniversary for an otherwise empty card.
+   *
+   * Styled as an aside to the card, not as one of its items: muted, with
+   * its own small label, and never in the card's event list - so it can
+   * fill the space without being mistaken for something happening at the
+   * library. Every string goes in through textContent; the server already
+   * strips markup, and this makes sure none could ever be rendered.
+   *
+   * The source link is required, not decoration: Wikipedia text is
+   * CC BY-SA, and the link is the attribution.
+   */
+  function buildHomepageFact(day, state) {
+    const fact = pickOnThisDayFact(state, day);
+    if (!fact) {
+      return null;
+    }
+
+    const wrap = document.createElement('div');
+    wrap.className = 'libcal-gantt-home__fact';
+
+    const label = document.createElement('p');
+    label.className = 'libcal-gantt-home__fact-label';
+    const icon = document.createElement('span');
+    icon.className = 'libcal-gantt-home__fact-icon fas fa-history fa-fw';
+    icon.setAttribute('aria-hidden', 'true');
+    label.appendChild(icon);
+    const year = typeof fact.year === 'number' && isFinite(fact.year) ? fact.year : null;
+    let labelText;
+    if (year === null) {
+      labelText = Drupal.t('On this day');
+    }
+    else if (year < 0) {
+      labelText = Drupal.t('On this day in @year BC', { '@year': String(Math.abs(year)) });
+    }
+    else {
+      labelText = Drupal.t('On this day in @year', { '@year': String(year) });
+    }
+    label.appendChild(document.createTextNode(labelText));
+    wrap.appendChild(label);
+
+    const text = document.createElement('p');
+    text.className = 'libcal-gantt-home__fact-text';
+    text.textContent = fact.text;
+    wrap.appendChild(text);
+
+    if (typeof fact.url === 'string' && /^https:\/\/en\.wikipedia\.org\//.test(fact.url)) {
+      const link = document.createElement('a');
+      link.className = 'libcal-gantt-home__fact-source';
+      link.href = fact.url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = Drupal.t('Wikipedia');
+      // The visible word is short to fit the card; the accessible name says
+      // where it goes and that it leaves the site in a new tab.
+      link.setAttribute('aria-label', fact.title
+        ? Drupal.t('Read about @title on Wikipedia (opens in a new tab)', { '@title': fact.title })
+        : Drupal.t('Read more on Wikipedia (opens in a new tab)'));
+      wrap.appendChild(link);
+    }
+
+    return wrap;
   }
 
   /**

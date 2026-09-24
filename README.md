@@ -80,6 +80,17 @@ automatically to a vertical, day-by-day agenda. Built for LSU Libraries.
   renders the image effectively invisible. Tunable via
   `--libcal-gantt-item-image-opacity` / `-blend` / `-fade-start` / `-width` /
   `-soften` / `-zoom`. See [docs/theming.md](docs/theming.md).
+- Optional Wikipedia **"On this day"** facts on the homepage teaser. A weekday
+  card with nothing scheduled keeps its "Nothing scheduled" line and adds one
+  anniversary from that date, taken from the curated "On this day" list on
+  Wikipedia's Main Page, with a link back to the article as attribution. The
+  list for each date is fetched server-side and cached (one request per date
+  per day, shared by every visitor); which fact is shown is picked at random
+  on each page load and stays put through re-renders. Days with events, the
+  weekend strip, and the full grid are never affected.
+- The homepage teaser has no "Week of …" headings; every card states its own
+  date and weekend strips separate the weeks. Each week band is still a named
+  `role="group"` (via `aria-label`) for screen readers.
 - Responsive by design — day-column grid on wide screens, agenda list on
   phones, with no horizontal scrolling or unreadably thin bars on mobile.
 - Placeable block, zero JavaScript dependencies, and fully themeable via CSS
@@ -174,6 +185,14 @@ Go to **Admin > Configuration > Web services > LibCal Gantt Timeline**
   and only today and tomorrow carry a start time. A failed or unconfigured
   forecast renders nothing and never delays the events feed.
 
+- **Wikipedia "On this day"** *(optional, off by default)* — fills empty
+  homepage day cards with one anniversary from that date. No API key; requests
+  come from the server (never visitors' browsers) and identify themselves with
+  the site email, as Wikimedia's API policy asks. Uses
+  `en.wikipedia.org/api/rest_v1/feed/onthisday/selected/MM/DD`, falling back
+  to the `api.wikimedia.org` mirror. A failed lookup renders nothing extra and
+  is retried after an hour.
+
 Then place the **"LibCal Events Gantt Chart"** block (Admin > Structure >
 Block layout) into a region of your theme. The block fetches and renders the
 timeline client-side.
@@ -198,6 +217,9 @@ seeded with the LibCal events and programming calendar so the teaser link
 keeps working across the update. Block placements that saved their own URL
 continue to win over it; the update reports which ones, and clearing the field
 on a placement makes it inherit the site setting instead.
+
+`libcal_gantt_update_10004` adds the **Wikipedia "On this day"** settings,
+switched off. Enable them on the settings form.
 
 ## Customizing the look
 

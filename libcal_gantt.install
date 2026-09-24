@@ -153,3 +153,40 @@ function libcal_gantt_update_10003(): string {
 
   return implode(' ', $messages);
 }
+
+/**
+ * Adds the Wikipedia "On this day" settings.
+ *
+ * Arrives switched OFF, for the same reason the weather did in
+ * libcal_gantt_update_10002(): turning on calls to a new external service
+ * is a decision for whoever runs the site, not for a database update.
+ * Tick "Show Wikipedia 'On this day' facts on empty days" on the settings
+ * form to enable it. Existing values are never overwritten.
+ */
+function libcal_gantt_update_10004(): string {
+  $config = \Drupal::configFactory()->getEditable('libcal_gantt.settings');
+
+  $defaults = [
+    'show_on_this_day' => FALSE,
+    'on_this_day_cache_ttl' => 86400,
+  ];
+
+  $added = [];
+  foreach ($defaults as $key => $value) {
+    if ($config->get($key) === NULL) {
+      $added[] = $key;
+      $config->set($key, $value);
+    }
+  }
+
+  if (!$added) {
+    return '"On this day" settings were already present; nothing to add.';
+  }
+
+  $config->save(TRUE);
+
+  return sprintf(
+    'Added "On this day" setting(s): %s. The facts stay off until enabled on the module settings form.',
+    implode(', ', $added)
+  );
+}

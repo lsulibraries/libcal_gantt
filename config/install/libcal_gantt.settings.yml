@@ -19,3 +19,5 @@ weather_lat: ''
 weather_lon: ''
 weather_contact: ''
 weather_cache_ttl: 1800
+show_on_this_day: false
+on_this_day_cache_ttl: 86400

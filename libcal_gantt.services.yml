@@ -24,3 +24,15 @@ services:
       - '@cache.default'
       - '@datetime.time'
       - '@logger.channel.libcal_gantt'
+
+  # Same five dependencies again, for the same reason as the weather: the
+  # "On this day" facts are fetched, cached and logged exactly like the
+  # other two external feeds, and share the same logger channel.
+  libcal_gantt.on_this_day:
+    class: Drupal\libcal_gantt\Service\OnThisDayClient
+    arguments:
+      - '@http_client'
+      - '@config.factory'
+      - '@cache.default'
+      - '@datetime.time'
+      - '@logger.channel.libcal_gantt'

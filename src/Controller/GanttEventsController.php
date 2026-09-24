@@ -7,6 +7,7 @@ namespace Drupal\libcal_gantt\Controller;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\libcal_gantt\Service\LibCalClient;
+use Drupal\libcal_gantt\Service\OnThisDayClient;
 use Drupal\libcal_gantt\Service\WeatherClient;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -36,6 +37,7 @@ class GanttEventsController extends ControllerBase {
     protected readonly LibCalClient $libcalClient,
     protected readonly TimeInterface $time,
     protected readonly WeatherClient $weatherClient,
+    protected readonly OnThisDayClient $onThisDayClient,
   ) {}
 
   public static function create(ContainerInterface $container): static {
@@ -43,6 +45,7 @@ class GanttEventsController extends ControllerBase {
       $container->get('libcal_gantt.client'),
       $container->get('datetime.time'),
       $container->get('libcal_gantt.weather'),
+      $container->get('libcal_gantt.on_this_day'),
     );
   }
 
@@ -240,6 +243,28 @@ class GanttEventsController extends ControllerBase {
       ? $this->weatherClient->getForecast(array_slice($days, 0, self::WEATHER_DAYS), $timezone)
       : [];
 
+    // WIKIPEDIA "ON THIS DAY", for the weekdays in this window that have
+    // nothing on them. Only the homepage teaser draws these (it sends
+    // ?facts=1), so the full grid never costs a Wikimedia request.
+    //
+    // A day is quiet when no event in THIS calendar tab has a segment on
+    // it - the same test the homepage card uses to print "Nothing
+    // scheduled", since a multi-day span carries a segment for every day
+    // it covers. Sending facts only for those days keeps the payload to
+    // what can actually be shown. OnThisDayClient fails soft like the
+    // weather: an outage just means the card keeps its plain empty line.
+    $onThisDay = [];
+    if ($request->query->getBoolean('facts')) {
+      $busyDays = [];
+      foreach ($events as $event) {
+        foreach (array_keys($event['segments'] ?? []) as $segmentDay) {
+          $busyDays[$segmentDay] = TRUE;
+        }
+      }
+      $quietDays = array_values(array_filter($days, static fn (string $day): bool => !isset($busyDays[$day])));
+      $onThisDay = $this->onThisDayClient->getFacts($quietDays);
+    }
+
     $response = new JsonResponse([
       'days' => $days,
       'rows' => $rowLabels,
@@ -248,6 +273,9 @@ class GanttEventsController extends ControllerBase {
       'weekends' => $weekends,
       'weekendHours' => $weekendHours,
       'weather' => $weather,
+      // An object even when empty, so the front end never has to tell an
+      // empty PHP array ([]) apart from "no facts".
+      'onThisDay' => $onThisDay ?: new \stdClass(),
       'calendars' => $calendarList,
       'calendar' => $selectedCalendarKey,
       'offset' => $offset,

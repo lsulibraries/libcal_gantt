@@ -274,6 +274,30 @@ class SettingsForm extends ConfigFormBase {
       ],
     ];
 
+    $form['on_this_day'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Wikipedia "On this day" (optional)'),
+      '#description' => $this->t('Fills homepage day cards that have nothing scheduled with one anniversary from that date, taken from the "On this day" list on Wikipedia\'s Main Page (no API key). A different one is picked at random on each page load. Days with events are never affected, and if Wikipedia does not answer the card simply shows "Nothing scheduled" as before.'),
+    ];
+
+    $form['on_this_day']['show_on_this_day'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Show Wikipedia "On this day" facts on empty days'),
+      '#default_value' => (bool) $config->get('show_on_this_day'),
+      '#description' => $this->t('Homepage display style only; the full grid never shows them. Requests are made by this server, not by visitors\' browsers, and identify themselves with this site\'s email address as Wikimedia asks.'),
+    ];
+
+    $form['on_this_day']['on_this_day_cache_ttl'] = [
+      '#type' => 'number',
+      '#title' => $this->t('"On this day" cache lifetime (seconds)'),
+      '#default_value' => $config->get('on_this_day_cache_ttl') ?: 86400,
+      '#min' => 3600,
+      '#description' => $this->t('The list for a date rarely changes, so one fetch per date per day is plenty. The random pick still happens on every page load; only the list is cached.'),
+      '#states' => [
+        'visible' => [':input[name="show_on_this_day"]' => ['checked' => TRUE]],
+      ],
+    ];
+
     $form['advanced'] = [
       '#type' => 'details',
       '#title' => $this->t('Advanced'),
@@ -363,7 +387,9 @@ class SettingsForm extends ConfigFormBase {
       ->set('weather_lat', trim((string) $form_state->getValue('weather_lat')))
       ->set('weather_lon', trim((string) $form_state->getValue('weather_lon')))
       ->set('weather_contact', trim((string) $form_state->getValue('weather_contact')))
-      ->set('weather_cache_ttl', (int) $form_state->getValue('weather_cache_ttl'));
+      ->set('weather_cache_ttl', (int) $form_state->getValue('weather_cache_ttl'))
+      ->set('show_on_this_day', (bool) $form_state->getValue('show_on_this_day'))
+      ->set('on_this_day_cache_ttl', (int) $form_state->getValue('on_this_day_cache_ttl'));
 
     // Only the per-row URL fields that were actually rendered (i.e. rows
     // currently in "Location rows") are in $form_state - trim and drop
