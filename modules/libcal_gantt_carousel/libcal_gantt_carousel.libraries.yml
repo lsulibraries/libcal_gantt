@@ -1,0 +1,16 @@
+day-carousel:
+  # No `version:` key, for the same reason as libcal_gantt.libraries.yml:
+  # with a version, Drupal pins the JS URL to ?v=<version> and deploys
+  # stop busting the browser cache.
+  js:
+    js/day-carousel.js: {}
+  css:
+    component:
+      css/day-carousel.css: {}
+  dependencies:
+    - core/drupal
+    - core/once
+    - core/drupalSettings
+  # Bootstrap's JS comes from the theme (Palefire). Without it, the block
+  # falls back to a horizontal scroll-snap strip, so it still works under
+  # Origami or any other theme.

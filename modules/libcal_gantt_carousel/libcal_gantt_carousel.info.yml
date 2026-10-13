@@ -1,0 +1,7 @@
+name: 'LibCal Gantt Day Carousel'
+type: module
+description: 'Adds a full-height Bootstrap carousel block (one slide per library day, with weather and building hours) on top of LibCal Gantt Timeline. Changes nothing in the parent module.'
+package: Custom
+core_version_requirement: ^10.2 || ^11
+dependencies:
+  - libcal_gantt:libcal_gantt

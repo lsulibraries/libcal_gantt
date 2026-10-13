@@ -1,0 +1,11 @@
+# Same payload as /libcal-gantt/events, with weather for every day NWS has
+# a forecast for (about 7) instead of the parent's 3. The parent route
+# is not touched, so Origami's blocks keep calling it as before.
+libcal_gantt_carousel.events:
+  path: '/libcal-gantt/carousel-events'
+  defaults:
+    _controller: '\Drupal\libcal_gantt_carousel\Controller\CarouselEventsController::getCarouselEvents'
+  requirements:
+    _access: 'TRUE'
+  options:
+    no_cache: TRUE
