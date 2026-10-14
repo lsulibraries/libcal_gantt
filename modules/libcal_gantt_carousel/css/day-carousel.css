@@ -300,6 +300,86 @@
   }
 }
 
+/* Wide mode (xl and xxl, set by day-carousel.js): three days side by side,
+   one per column. Every column stays display:block in a flex row, and all
+   of them slide together by --ldc-start columns. Bootstrap's own
+   transition classes (carousel-item-next, -start, ...) still get added,
+   but these rules out-rank them, so only --ldc-start moves anything.
+   Bootstrap waits for this transition to end before it fires `slid`. */
+.libcal-day-carousel {
+  --ldc-col-pad: clamp(1rem, 1.6vw, 1.75rem);
+  --ldc-col-gap: 1.25rem;
+  --ldc-speed: 0.6s;
+  --ldc-ease: ease-in-out;
+}
+
+.libcal-day-carousel.is-multi .carousel-inner {
+  display: flex;
+}
+
+.libcal-day-carousel.is-multi .carousel-item {
+  display: block;
+  float: none;
+  flex: 0 0 calc(100% / var(--ldc-cols, 3));
+  width: auto;
+  min-width: 0;
+  margin-right: 0;
+  transform: translateX(calc(var(--ldc-start, 0) * -100%));
+  transition: transform var(--ldc-speed) var(--ldc-ease);
+}
+
+[dir="rtl"] .libcal-day-carousel.is-multi .carousel-item {
+  transform: translateX(calc(var(--ldc-start, 0) * 100%));
+}
+
+.libcal-day-carousel.is-multi .carousel-item + .carousel-item {
+  border-inline-start: 1px solid var(--ldc-border);
+}
+
+.libcal-day-carousel .is-instant .carousel-item {
+  transition: none;
+}
+
+/* One narrow column per day: stack date, weather and hours above the
+   events instead of the two-column slide layout. */
+.libcal-day-carousel.is-multi .libcal-day__grid {
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: var(--ldc-col-gap);
+  padding: var(--ldc-col-pad);
+}
+
+.libcal-day-carousel.is-multi .libcal-day__date {
+  margin-bottom: 1rem;
+  font-size: clamp(1.35rem, 1.7vw, 1.9rem);
+}
+
+.libcal-day-carousel.is-multi .libcal-day__weather {
+  margin-bottom: 1rem;
+}
+
+.libcal-day-carousel.is-multi .libcal-day__weather-icon {
+  width: 2.25rem;
+  height: 2.25rem;
+}
+
+.libcal-day-carousel.is-multi .libcal-day__feature {
+  aspect-ratio: 16 / 9;
+}
+
+.libcal-day-carousel.is-multi .libcal-day__event {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.15rem;
+  padding: 0.7rem 0;
+}
+
+/* Every day in view gets the tab highlight, not just the first one. */
+.libcal-day-carousel .carousel-indicators [data-bs-target].libcal-day-carousel__tab.is-in-view {
+  background: var(--ldc-accent);
+  border-color: var(--ldc-accent);
+  color: var(--ldc-accent-fg);
+}
+
 /* Fallback when Bootstrap's JS isn't on the page: every slide in a
    horizontal scroll-snap strip. */
 .libcal-day-carousel.is-static .carousel-inner {
@@ -316,12 +396,19 @@
   scroll-snap-align: start;
 }
 
+@media (min-width: 1200px) {
+  .libcal-day-carousel.is-static .carousel-item {
+    flex-basis: calc(100% / 3);
+  }
+}
+
 .libcal-day-carousel.is-static .libcal-day-carousel__toolbar {
   display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .libcal-day-carousel .carousel-item {
+  .libcal-day-carousel .carousel-item,
+  .libcal-day-carousel.is-multi .carousel-item {
     transition: none;
   }
 }

@@ -28,6 +28,12 @@
 
   let sequence = 0;
 
+  // Wide mode: from Bootstrap's xl breakpoint up (xl and xxl), show this
+  // many days side by side. Reads Bootstrap 5.3's --bs-breakpoint-xl so a
+  // theme that changes the breakpoint is followed; 1200px otherwise.
+  const WIDE_COLUMNS = 3;
+  const WIDE_QUERY = '(min-width: ' + ((window.getComputedStyle && getComputedStyle(document.documentElement).getPropertyValue('--bs-breakpoint-xl').trim()) || '1200px') + ')';
+
   Drupal.behaviors.libcalGanttDayCarousel = {
     attach(context, settings) {
       const endpoint = (settings.libcalGanttCarousel && settings.libcalGanttCarousel.endpoint) || '/libcal-gantt/carousel-events';
@@ -398,17 +404,93 @@
     };
     Carousel.getOrCreateInstance(frame, config);
 
-    // Bootstrap toggles `disabled` on nothing when wrap is false, so do it
-    // here. A disabled "Previous" on the first day is clearer than a no-op.
     const prev = frame.querySelector('[data-bs-slide="prev"]');
     const next = frame.querySelector('[data-bs-slide="next"]');
-    const items = frame.querySelectorAll('.carousel-item');
+    const items = Array.from(frame.querySelectorAll('.carousel-item'));
+    const tabs = Array.from(frame.querySelectorAll('.libcal-day-carousel__tab'));
     const count = items.length;
+
+    // Wide mode (xl and xxl): several days side by side, one per column.
+    // Bootstrap still owns the state (active day, tabs, buttons, swipe,
+    // keys). The active day is the leftmost column, and CSS slides every
+    // column by --ldc-start, so each step moves the view by one day.
+    // `maxStart` keeps the view full: on the last view the final day sits
+    // in the right-hand column.
+    const wide = window.matchMedia(WIDE_QUERY);
+    let multi = false;
+    let maxStart = count - 1;
+
+    const activeIndex = () => Math.max(0, items.findIndex((item) => item.classList.contains('active')));
+
+    // Bootstrap doesn't disable the buttons when wrap is false, so do it
+    // here. A disabled "Previous" on the first day is clearer than a no-op.
     const sync = (index) => {
       prev.disabled = index <= 0;
-      next.disabled = index >= count - 1;
+      next.disabled = index >= maxStart;
     };
-    sync(0);
+
+    // Shows columns start .. start + cols - 1. Columns outside the view are
+    // `inert`, so their links can't be tabbed to (the browser would scroll
+    // the clipped strip to reveal them) and screen readers skip them.
+    const cols = () => (multi ? Math.min(WIDE_COLUMNS, count) : 1);
+    const applyView = (start) => {
+      frame.style.setProperty('--ldc-start', String(multi ? start : 0));
+      items.forEach((item, i) => {
+        const inView = !multi || (i >= start && i < start + cols());
+        item.inert = !inView;
+        if (tabs[i]) {
+          tabs[i].classList.toggle('is-in-view', multi && inView);
+        }
+      });
+    };
+
+    // Moves without the slide animation (mode switches on resize).
+    const instant = (fn) => {
+      frame.classList.add('is-instant');
+      fn();
+      void frame.offsetWidth;
+      window.requestAnimationFrame(() => frame.classList.remove('is-instant'));
+    };
+
+    const setMode = () => {
+      multi = wide.matches && count > 1;
+      maxStart = multi ? Math.max(0, count - cols()) : count - 1;
+      el.classList.toggle('is-multi', multi);
+      frame.style.setProperty('--ldc-cols', String(cols()));
+      const index = activeIndex();
+      if (index > maxStart) {
+        // e.g. widening the window while the last day is showing.
+        instant(() => Carousel.getOrCreateInstance(frame).to(maxStart));
+        instant(() => applyView(maxStart));
+      }
+      else {
+        instant(() => applyView(index));
+      }
+      sync(Math.min(index, maxStart));
+    };
+    setMode();
+    if (wide.addEventListener) {
+      wide.addEventListener('change', setMode);
+    }
+    else if (wide.addListener) {
+      wide.addListener(setMode);
+    }
+
+    frame.addEventListener('slide.bs.carousel', (event) => {
+      if (multi && event.to > maxStart) {
+        // A tab for one of the last days, or Next/Right on the last view:
+        // show the last full view instead. A no-op when it's already shown.
+        event.preventDefault();
+        window.setTimeout(() => {
+          const instance = Carousel.getInstance(frame);
+          if (instance) {
+            instance.to(maxStart);
+          }
+        }, 0);
+        return;
+      }
+      applyView(event.to);
+    });
 
     // Polite live region. Only user-initiated changes are announced, so
     // autoplay never talks over a screen reader (WAI-ARIA APG carousel).
@@ -431,14 +513,34 @@
       }
     }, true);
 
+    const announce = (index) => {
+      if (!multi) {
+        return items[index] ? items[index].getAttribute('aria-label') : '';
+      }
+      const last = Math.min(count - 1, index + cols() - 1);
+      return Drupal.t('Showing @first to @last (days @n\u2013@m of @total)', {
+        '@first': longDate(items[index].dataset.day),
+        '@last': longDate(items[last].dataset.day),
+        '@n': index + 1,
+        '@m': last + 1,
+        '@total': count,
+      });
+    };
+
     frame.addEventListener('slid.bs.carousel', (event) => {
       sync(event.to);
+      // If focus was on a link in a column that just left the view, move it
+      // to the tab of the new first day instead of losing it to <body>.
+      const focused = document.activeElement;
+      if (focused && focused.closest && focused.closest('.carousel-item[inert]') && tabs[event.to]) {
+        tabs[event.to].focus();
+      }
       const at = parseInt(frame.dataset.userSlideAt || '0', 10);
       if (Date.now() - at > USER_SLIDE_WINDOW) {
         return;
       }
       delete frame.dataset.userSlideAt;
-      live.textContent = items[event.to] ? items[event.to].getAttribute('aria-label') : '';
+      live.textContent = announce(event.to);
       // Once someone navigates by hand, autoplay stays off for good.
       // Bootstrap's own pause only lasts until the pointer leaves, so the
       // instance is recreated without an interval.
