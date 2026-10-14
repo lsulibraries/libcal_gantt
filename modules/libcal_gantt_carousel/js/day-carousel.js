@@ -387,28 +387,155 @@
       return;
     }
     const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const autoplay = options.interval > 0 && !reduceMotion;
-    Carousel.getOrCreateInstance(frame, {
+    let autoplay = options.interval > 0 && !reduceMotion;
+    const config = {
       interval: autoplay ? options.interval : false,
       ride: autoplay ? 'carousel' : false,
       keyboard: true,
       touch: true,
       pause: 'hover',
       wrap: false,
-    });
+    };
+    Carousel.getOrCreateInstance(frame, config);
 
     // Bootstrap toggles `disabled` on nothing when wrap is false, so do it
     // here. A disabled "Previous" on the first day is clearer than a no-op.
     const prev = frame.querySelector('[data-bs-slide="prev"]');
     const next = frame.querySelector('[data-bs-slide="next"]');
-    const count = frame.querySelectorAll('.carousel-item').length;
+    const items = frame.querySelectorAll('.carousel-item');
+    const count = items.length;
     const sync = (index) => {
       prev.disabled = index <= 0;
       next.disabled = index >= count - 1;
     };
     sync(0);
-    frame.addEventListener('slid.bs.carousel', (event) => sync(event.to));
+
+    // Polite live region. Only user-initiated changes are announced, so
+    // autoplay never talks over a screen reader (WAI-ARIA APG carousel).
+    const live = make('div', 'visually-hidden');
+    live.setAttribute('aria-live', 'polite');
+    live.setAttribute('aria-atomic', 'true');
+    el.appendChild(live);
+
+    // Anything the user does inside the carousel (buttons, arrow keys while
+    // a tab or button has focus, touch swipe) marks the next slide change
+    // as user-initiated. The section-wide key handler below marks it too.
+    const markUser = () => {
+      frame.dataset.userSlideAt = String(Date.now());
+    };
+    frame.addEventListener('click', markUser, true);
+    frame.addEventListener('pointerdown', markUser, true);
+    frame.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        markUser();
+      }
+    }, true);
+
+    frame.addEventListener('slid.bs.carousel', (event) => {
+      sync(event.to);
+      const at = parseInt(frame.dataset.userSlideAt || '0', 10);
+      if (Date.now() - at > USER_SLIDE_WINDOW) {
+        return;
+      }
+      delete frame.dataset.userSlideAt;
+      live.textContent = items[event.to] ? items[event.to].getAttribute('aria-label') : '';
+      // Once someone navigates by hand, autoplay stays off for good.
+      // Bootstrap's own pause only lasts until the pointer leaves, so the
+      // instance is recreated without an interval.
+      if (autoplay) {
+        autoplay = false;
+        window.setTimeout(() => {
+          const instance = Carousel.getInstance(frame);
+          if (instance) {
+            instance.pause();
+            instance.dispose();
+          }
+          Carousel.getOrCreateInstance(frame, Object.assign({}, config, { interval: false, ride: false }));
+        }, 0);
+      }
+    });
   }
+
+  /**
+   * Section-wide arrow keys (Palefire modular pages only).
+   *
+   * Bootstrap's `keyboard: true` only reacts while focus is inside the
+   * carousel. On a modular page, Left/Right also change the day whenever
+   * the carousel's section is the active one in the table of contents
+   * (body[data-active-section], set by palefire/js/modular-toc.js) and on
+   * screen. This gives keyboard users the same "swipe" a touchscreen gets
+   * without having to tab into the carousel first.
+   *
+   * Left alone so nothing else breaks:
+   * - modifier keys (Alt+Left is browser Back), and already-handled events;
+   * - typing in inputs, textareas, selects and contenteditable regions;
+   * - widgets that own their arrow keys (tabs, menus, sliders, listboxs…);
+   * - open dialogs, modals and the mobile "On this page" offcanvas;
+   * - focus inside the carousel itself, which Bootstrap already handles.
+   * Up/Down are never touched, so page scrolling and scroll-snap work as
+   * normal. Screen readers in browse mode consume arrow keys before the
+   * page sees them, so this does not interfere with reading.
+   *
+   * One listener for the whole document, resolved at keypress time, so it
+   * keeps working (and doesn't leak) across Swup page swaps.
+   */
+  const USER_SLIDE_WINDOW = 1500;
+  const ARROW_WIDGETS = [
+    'input', 'textarea', 'select', '[contenteditable]:not([contenteditable="false"])',
+    '[role="tablist"]', '[role="tab"]', '[role="menu"]', '[role="menubar"]', '[role="menuitem"]',
+    '[role="listbox"]', '[role="option"]', '[role="slider"]', '[role="spinbutton"]',
+    '[role="radiogroup"]', '[role="radio"]', '[role="grid"]', '[role="tree"]', '[role="combobox"]',
+    '[role="textbox"]', '[role="toolbar"]', 'video', 'audio',
+  ].join(',');
+  const OVERLAYS = 'dialog[open], [aria-modal="true"], .modal.show, .offcanvas.show, .offcanvas-lg.show';
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+      return;
+    }
+    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+      return;
+    }
+    const target = event.target instanceof Element ? event.target : null;
+    if (target && (target.closest(ARROW_WIDGETS) || target.closest(OVERLAYS))) {
+      return;
+    }
+    if (document.querySelector('.modal.show, dialog[open]')) {
+      return;
+    }
+
+    const activeId = document.body && document.body.dataset.activeSection;
+    const Carousel = window.bootstrap && window.bootstrap.Carousel;
+    if (!activeId || !Carousel) {
+      return;
+    }
+    const section = document.getElementById(activeId);
+    const frame = section && section.querySelector('.libcal-day-carousel__frame.carousel');
+    if (!frame || (target && frame.contains(target))) {
+      return;
+    }
+    // Guards against a stale id (e.g. after a Swup swap) or a section that
+    // has scrolled away before the TOC updated.
+    const rect = section.getBoundingClientRect();
+    if (rect.bottom <= 0 || rect.top >= window.innerHeight) {
+      return;
+    }
+    const instance = Carousel.getInstance(frame);
+    if (!instance) {
+      return;
+    }
+
+    event.preventDefault();
+    frame.dataset.userSlideAt = String(Date.now());
+    const rtl = (frame.closest('[dir]') || document.documentElement).getAttribute('dir') === 'rtl';
+    const forward = (event.key === 'ArrowRight') !== rtl;
+    if (forward) {
+      instance.next();
+    }
+    else {
+      instance.prev();
+    }
+  });
 
   /* ------------------------------------------------------------------
    * Helpers
