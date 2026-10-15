@@ -149,6 +149,8 @@
           image: event.image,
           imageAlt: event.imageAlt || '',
           sort: allDay ? -1 : seg.startHour,
+          allDay: allDay,
+          endHour: seg.endHour,
           // Times come from the day's segment, not the event's overall
           // start/end labels, so day 3 of a multi-day event reads correctly.
           time: allDay ? Drupal.t('All day') : formatHour(seg.startHour) + '\u2013' + formatHour(seg.endHour),
@@ -173,6 +175,8 @@
           image: event.image,
           imageAlt: '',
           sort: allDay ? -1 : labelToHour(event.startLabel),
+          allDay: allDay,
+          endHour: allDay ? 24 : (labelToHour(event.endLabel) || 24),
           time: allDay ? Drupal.t('All day') : event.startLabel + '\u2013' + event.endLabel,
         });
       });
@@ -236,6 +240,7 @@
     el.appendChild(frame);
 
     activate(el, frame, options);
+    listInToc(el, frame);
   }
 
   function buildSlide(slide, index, total, options, today, tomorrow) {
@@ -282,7 +287,12 @@
 
       const listEl = make('ol', 'libcal-day__events');
       slide.events.slice(0, options.eventsPerSlide).forEach((event) => {
-        const li = make('li', 'libcal-day__event');
+        const li = make('li', 'libcal-day__event' + (event.allDay ? ' is-all-day' : ''));
+        li.dataset.day = slide.day;
+        li.dataset.allDay = event.allDay ? '1' : '0';
+        li.dataset.endHour = String(event.endHour);
+        li.dataset.title = event.title || '';
+        li.dataset.time = event.time || '';
         li.appendChild(make('span', 'libcal-day__event-time', event.time));
         const body = make('div', 'libcal-day__event-body');
         const title = event.url ? make('a', 'libcal-day__event-title', event.title) : make('span', 'libcal-day__event-title', event.title);
@@ -372,12 +382,31 @@
     return svg;
   }
 
+  // The chevron is an inline SVG in currentColor, not Bootstrap's
+  // .carousel-control-*-icon. Bootstrap draws that icon as a white
+  // background image and, under data-bs-theme="dark", runs it through
+  // invert(1), which turned it black on the dark section.
+  const CHEVRONS = { prev: 'M10 3L5 8l5 5', next: 'M6 3l5 5-5 5' };
+
   function controlButton(id, direction, label) {
     const button = make('button', 'carousel-control-' + direction + ' libcal-day-carousel__control');
     button.type = 'button';
     button.setAttribute('data-bs-target', '#' + id);
     button.setAttribute('data-bs-slide', direction);
-    button.appendChild(make('span', 'carousel-control-' + direction + '-icon')).setAttribute('aria-hidden', 'true');
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('class', 'libcal-day-carousel__chevron');
+    svg.setAttribute('viewBox', '0 0 16 16');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '1.75');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('d', CHEVRONS[direction]);
+    svg.appendChild(path);
+    button.appendChild(svg);
     button.appendChild(make('span', 'visually-hidden', label));
     return button;
   }
@@ -438,6 +467,9 @@
       items.forEach((item, i) => {
         const inView = !multi || (i >= start && i < start + cols());
         item.inert = !inView;
+        // The first column in view hides its left border (CSS fades it),
+        // so only the borders between the columns in view show.
+        item.classList.toggle('is-first-in-view', multi && i === start);
         if (tabs[i]) {
           tabs[i].classList.toggle('is-in-view', multi && inView);
         }
@@ -638,6 +670,143 @@
       instance.prev();
     }
   });
+
+  /* ------------------------------------------------------------------
+   * "On this page" links (Palefire modular pages)
+   * ---------------------------------------------------------------- */
+
+  /**
+   * Lists the next few timed events under the calendar's entry in the
+   * "On this page" table of contents, the way the TOC lists a section's
+   * h3s.
+   *
+   * - Picks the first TOC_EVENTS events in day order that are not all-day
+   *   and have not ended yet. Only events shown on a slide count (see
+   *   "Events per day").
+   * - Marks each one with data-toc (label: data-toc-label, extra screen
+   *   reader text: data-toc-detail) and data-toc-passive, so the TOC lists
+   *   it but doesn't highlight it by scroll position. The columns sit side
+   *   by side, so "which one is under the line" means nothing here.
+   * - The block root gets data-toc-skip, so the day headings (h3) stay
+   *   out of the TOC at every depth.
+   * - The slides are built after the TOC, so this fires
+   *   `palefire:tocrefresh` and palefire/js/modular-toc.js rebuilds the
+   *   section's sub-list. Without the Palefire TOC nothing listens and the
+   *   attributes do nothing.
+   *
+   * Change the number with data-toc-events on the block wrapper
+   * (0 turns it off).
+   */
+  const TOC_EVENTS = 3;
+
+  function listInToc(el, frame) {
+    el.setAttribute('data-toc-skip', '');
+    const wanted = el.dataset.tocEvents !== undefined ? parseInt(el.dataset.tocEvents, 10) : TOC_EVENTS;
+    if (!(wanted > 0)) {
+      return;
+    }
+    const now = new Date();
+    const today = isoDate(now);
+    const hourNow = now.getHours() + now.getMinutes() / 60;
+    const picked = [];
+    const events = frame.querySelectorAll('.libcal-day__event');
+    for (let i = 0; i < events.length && picked.length < wanted; i++) {
+      const li = events[i];
+      const day = li.dataset.day || '';
+      if (li.dataset.allDay === '1' || day < today) {
+        continue;
+      }
+      if (day === today && parseFloat(li.dataset.endHour) <= hourNow) {
+        continue;
+      }
+      picked.push(li);
+    }
+    picked.forEach((li, n) => {
+      li.id = frame.id + '-event-' + (n + 1);
+      li.setAttribute('data-toc', '');
+      li.setAttribute('data-toc-passive', '');
+      li.setAttribute('tabindex', '-1');
+      li.dataset.tocLabel = li.dataset.title || li.textContent.trim();
+      li.dataset.tocDetail = parseDate(li.dataset.day).toLocaleDateString(locale(), { weekday: 'long', month: 'long', day: 'numeric' }) + ', ' + (li.dataset.time || '');
+    });
+    if (picked.length) {
+      el.dispatchEvent(new CustomEvent('palefire:tocrefresh', { bubbles: true }));
+    }
+  }
+
+  /**
+   * Jumps to an event from a link to its id (the TOC sub-links above, or
+   * any other #link). A plain anchor jump can't reach a day outside the
+   * view: the browser would scroll the clipped strip sideways and break
+   * the layout. So the carousel moves to that day first, then the page
+   * scrolls down to the event and focus moves to its title link.
+   *
+   * Capture phase, so it runs before Bootstrap and before the TOC's own
+   * click handler (which still marks the link active).
+   */
+  document.addEventListener('click', (event) => {
+    if (event.defaultPrevented || event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+      return;
+    }
+    const link = event.target instanceof Element ? event.target.closest('a[href^="#"]') : null;
+    if (!link || link.hash.length < 2) {
+      return;
+    }
+    let target = null;
+    try {
+      target = document.getElementById(decodeURIComponent(link.hash.slice(1)));
+    }
+    catch (e) {
+      return;
+    }
+    if (!target || !target.classList.contains('libcal-day__event') || !target.closest('.libcal-day-carousel__frame')) {
+      return;
+    }
+    event.preventDefault();
+    revealEvent(target);
+  }, true);
+
+  function revealEvent(li) {
+    const frame = li.closest('.libcal-day-carousel__frame');
+    const item = li.closest('.carousel-item');
+    const items = Array.from(frame.querySelectorAll('.carousel-item'));
+    const index = items.indexOf(item);
+    const multi = !!frame.closest('.libcal-day-carousel.is-multi');
+    const inView = multi ? !item.inert : item.classList.contains('active');
+    const Carousel = window.bootstrap && window.bootstrap.Carousel;
+    const instance = Carousel ? Carousel.getInstance(frame) : null;
+    const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    let done = false;
+    const finish = () => {
+      if (done) {
+        return;
+      }
+      done = true;
+      const header = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pf-header-h')) || 0;
+      const top = li.getBoundingClientRect().top + window.scrollY - header - 16;
+      window.scrollTo({ top: Math.max(0, top), behavior: reduceMotion ? 'auto' : 'smooth' });
+      const focusable = li.querySelector('a[href]') || li;
+      focusable.focus({ preventScroll: true });
+    };
+
+    if (inView || index < 0) {
+      finish();
+      return;
+    }
+    if (!instance) {
+      // Scroll-snap fallback (no Bootstrap JS): bring the day into the strip.
+      const strip = item.parentElement;
+      strip.scrollTo({ left: item.offsetLeft - strip.offsetLeft, behavior: reduceMotion ? 'auto' : 'smooth' });
+      finish();
+      return;
+    }
+    // A user action: it is announced and stops autoplay (see activate()).
+    frame.dataset.userSlideAt = String(Date.now());
+    frame.addEventListener('slid.bs.carousel', () => window.requestAnimationFrame(finish), { once: true });
+    window.setTimeout(finish, 1500);
+    instance.to(index);
+  }
 
   /* ------------------------------------------------------------------
    * Helpers

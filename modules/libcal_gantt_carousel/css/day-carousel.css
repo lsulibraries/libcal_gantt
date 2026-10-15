@@ -17,7 +17,6 @@
   --ldc-accent-fg: #000;
   --ldc-brand: #461d7c;
   --ldc-radius: 18px;
-  --ldc-control-filter: invert(1);
 
   color: var(--ldc-fg);
   min-height: var(--ldc-min-height);
@@ -108,28 +107,45 @@
 
 .libcal-day-carousel .libcal-day-carousel__control {
   position: static;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 44px;
   height: 44px;
+  padding: 0;
   border: 1px solid var(--ldc-border);
   border-radius: 50%;
   background: transparent;
+  /* Bootstrap colours .carousel-control-* white at 50% opacity. The chevron
+     is currentColor, so it follows the text colour in light and dark. */
+  color: var(--ldc-fg);
   opacity: 1;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.libcal-day-carousel .libcal-day-carousel__control:hover,
+.libcal-day-carousel .libcal-day-carousel__control:focus-visible {
+  color: var(--ldc-fg);
+  border-color: var(--ldc-fg);
+  opacity: 1;
+}
+
+.libcal-day-carousel .libcal-day-carousel__control:focus-visible {
+  outline: 2px solid var(--ldc-accent);
+  outline-offset: 2px;
 }
 
 .libcal-day-carousel .libcal-day-carousel__control:disabled {
   opacity: 0.35;
+  border-color: var(--ldc-border);
   cursor: default;
 }
 
-.libcal-day-carousel .libcal-day-carousel__control > [class$="-icon"] {
+.libcal-day-carousel__chevron {
+  display: block;
   width: 1rem;
   height: 1rem;
-  filter: var(--ldc-control-filter);
-}
-
-[data-bs-theme="dark"] .libcal-day-carousel,
-.libcal-day-carousel[data-bs-theme="dark"] {
-  --ldc-control-filter: none;
+  pointer-events: none;
 }
 
 /* Slides */
@@ -332,11 +348,33 @@
   transform: translateX(calc(var(--ldc-start, 0) * 100%));
 }
 
-.libcal-day-carousel.is-multi .carousel-item + .carousel-item {
-  border-inline-start: 1px solid var(--ldc-border);
+/* Column dividers. Each column draws its own left border as a pseudo
+   element, so it can fade. The first column in view (.is-first-in-view,
+   set by day-carousel.js) fades its border out as it slides to the left
+   edge, and the column that leaves that spot fades its border back in. So
+   with three days in view only the two borders around the middle day show,
+   during the slide as well as after it. */
+.libcal-day-carousel.is-multi .carousel-item {
+  position: relative;
 }
 
-.libcal-day-carousel .is-instant .carousel-item {
+.libcal-day-carousel.is-multi .carousel-item::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  border-inline-start: 1px solid var(--ldc-border);
+  pointer-events: none;
+  transition: opacity var(--ldc-speed) var(--ldc-ease);
+}
+
+.libcal-day-carousel.is-multi .carousel-item:first-child::before,
+.libcal-day-carousel.is-multi .carousel-item.is-first-in-view::before {
+  opacity: 0;
+}
+
+.libcal-day-carousel .is-instant .carousel-item,
+.libcal-day-carousel .is-instant .carousel-item::before {
   transition: none;
 }
 
@@ -408,7 +446,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .libcal-day-carousel .carousel-item,
-  .libcal-day-carousel.is-multi .carousel-item {
+  .libcal-day-carousel.is-multi .carousel-item,
+  .libcal-day-carousel.is-multi .carousel-item::before {
     transition: none;
   }
 }

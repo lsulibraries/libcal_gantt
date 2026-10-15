@@ -60,6 +60,34 @@ per column. Below that it shows one day per slide as before.
   `--ldc-ease`; column padding is `--ldc-col-pad`.
 * **Without Bootstrap JS:** the scroll-snap fallback also shows three
   days per screen from 1200px up.
+* **Column borders:** the first column in view (`.is-first-in-view`) fades
+  out its left border as the view moves, so only the two borders either
+  side of the middle day show. Same `--ldc-speed` as the slide.
+
+## Previous/Next chevrons
+
+The chevrons are inline SVGs drawn in `currentColor`
+(`.libcal-day-carousel__chevron`), not Bootstrap's
+`.carousel-control-*-icon`. Bootstrap's icon is a white background image
+that `data-bs-theme="dark"` inverts to black, which made them invisible on
+dark sections. They now follow the text colour in light and dark.
+
+## Next events in "On this page" (Palefire)
+
+On Palefire Modular pages the next three timed events (not all-day, not
+already over, in day order) are listed under the calendar's entry in the
+table of contents, like a section's h3 sub-links. Each event `<li>` gets an
+id, `data-toc`, `data-toc-label` (its title), `data-toc-detail` (day and
+time, for screen readers) and `data-toc-passive` (the columns are side by
+side, so they aren't highlighted by scroll position). The block fires
+`palefire:tocrefresh` once its days are built. Following one of the links
+moves the carousel to that day, scrolls to the event and focuses its link.
+
+* **Changing the number:** `TOC_EVENTS` in `js/day-carousel.js`, or
+  `data-toc-events` on the block wrapper (`0` turns it off).
+* **Requires** the Palefire theme commit that adds `[data-toc]` items and
+  `palefire:tocrefresh` to `js/modular-toc.js`. Without it the attributes
+  do nothing.
 
 ## Keyboard and screen readers
 
