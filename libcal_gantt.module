@@ -1,0 +1,26 @@
+<?php
+
+/**
+ * @file
+ * Hook implementations for LibCal Gantt Timeline.
+ */
+
+declare(strict_types=1);
+
+/**
+ * Implements hook_preprocess_field().
+ *
+ * Attaches the LibCal today's-hours widget to any formatted text field whose
+ * value contains an s_lc_tdh_<iid>_<lid> placeholder.
+ */
+function libcal_gantt_preprocess_field(array &$variables): void {
+  if (!in_array($variables['field_type'] ?? '', ['text', 'text_long', 'text_with_summary'], TRUE)) {
+    return;
+  }
+  foreach ($variables['element']['#items'] ?? [] as $item) {
+    if (str_contains((string) $item->value, 's_lc_tdh_')) {
+      $variables['#attached']['library'][] = 'libcal_gantt/today-hours';
+      return;
+    }
+  }
+}

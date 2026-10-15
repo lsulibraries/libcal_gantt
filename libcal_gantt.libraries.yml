@@ -27,3 +27,16 @@ gantt-timeline:
     - core/drupal
     - core/once
     - core/drupalSettings
+
+today-hours:
+  # LibCal "today's hours" widget. Content only needs a placeholder such as
+  # <div id="s_lc_tdh_1486_236"></div> (s_lc_tdh_<iid>_<lid>); no inline
+  # <script> in node bodies, which the campus WAF rejects on save.
+  # Attached automatically by libcal_gantt_preprocess_field().
+  js:
+    https://lsu.libcal.com/js/hours_today.js: { type: external, minified: false }
+    js/today-hours.js: {}
+  dependencies:
+    - core/jquery
+    - core/drupal
+    - core/once
