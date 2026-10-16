@@ -290,15 +290,10 @@
 
     // Right column: events.
     const main = make('div', 'libcal-day__main');
-    // Quiet day (no timed events): the "On this day" fact takes the feature
-    // slot, above any all-day items.
-    if (slide.fact) {
-      main.appendChild(buildFact(slide.fact));
-    }
     if (slide.events.length) {
       // Only a timed event's image is featured: all-day items (a donation
       // bin, an open room) are standing notices, not the day's programme.
-      const featured = options.showImages && !slide.fact ? slide.events.find((event) => event.image && !event.allDay) : null;
+      const featured = options.showImages ? slide.events.find((event) => event.image && !event.allDay) : null;
       if (featured) {
         const figure = make('figure', 'libcal-day__feature');
         const img = document.createElement('img');
@@ -344,6 +339,13 @@
     }
     else {
       main.appendChild(paragraph('libcal-day__empty', Drupal.t('No events scheduled.')));
+    }
+    // Quiet day (no timed events): the "On this day" fact comes last, after
+    // the day's events (or "No events scheduled."), as a small aside. It is
+    // a fun add-on, not the day's programme, so it no longer takes the
+    // feature slot at the top.
+    if (slide.fact) {
+      main.appendChild(buildFact(slide.fact));
     }
     grid.appendChild(main);
     item.appendChild(grid);

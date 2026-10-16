@@ -75,8 +75,11 @@ dark sections. They now follow the text colour in light and dark.
 ## Quiet days: Wikipedia "On this day" (2026-10-16)
 
 A day with no timed events (nothing, or only all-day items) shows one
-Wikipedia "On this day" anniversary in the feature slot, above any all-day
-items, like the parent module's homepage strip does for empty days.
+Wikipedia "On this day" anniversary as the last thing in its column, after
+the events (or "No events scheduled."), like the parent module's homepage
+strip does for empty days. It is a fun add-on, so it is a small, muted
+aside, not a feature (follow-up: it first sat in the feature slot at the
+top, with an accent rule).
 
 * **Server:** `CarouselEventsController::quietDays()` finds the days in
   the window with no timed segment (a segment that runs the whole day is
@@ -92,16 +95,15 @@ items, like the parent module's homepage strip does for empty days.
   (`pickFact()`), drawn by `buildFact()` with the homepage's wording
   ("On this day in 1859") and a required "Wikipedia" source link (the
   CC BY-SA attribution; its accessible name names the article and the new
-  tab). A day with no events at all still says "No events scheduled." under
-  it. Markup: `.libcal-day__fact`, `__fact-label`, `__fact-text`,
+  tab). A day with no events at all says "No events scheduled." above it.
+  Markup: `.libcal-day__fact`, `__fact-label`, `__fact-text`,
   `__fact-source`.
 
 ## Featured image: timed events only (2026-10-16)
 
 The feature slot only shows the image of a timed event. All-day items (a
 donation bin, an open room) are standing notices, not the day's programme,
-so their images are not featured. A quiet day's fact takes the slot
-instead.
+so their images are not featured.
 
 ## Next events in "On this page" (Palefire)
 

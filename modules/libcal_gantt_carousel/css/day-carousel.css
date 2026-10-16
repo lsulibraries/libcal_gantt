@@ -264,33 +264,31 @@
   display: block;
 }
 
-/* Wikipedia "On this day" on a day with no timed events: an aside in the
-   feature slot, set apart from the event list by an accent rule. */
+/* Wikipedia "On this day" on a day with no timed events: a small, muted
+   aside at the end of the column, after the events. A fun add-on, not the
+   day's programme: no box, no accent, body-size muted text. */
 .libcal-day__fact {
-  padding: 1.25rem 1.25rem 1.125rem;
-  border-inline-start: 3px solid var(--ldc-accent);
-  background: color-mix(in srgb, var(--ldc-border) 25%, transparent);
-}
-
-.libcal-day__fact-label {
-  margin: 0 0 0.5rem;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  margin-top: 0.5rem;
   color: var(--ldc-muted);
 }
 
+.libcal-day__fact-label {
+  margin: 0 0 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .libcal-day__fact-text {
-  margin: 0 0 0.75rem;
-  font-size: 1.05rem;
+  margin: 0 0 0.375rem;
+  font-size: 0.875rem;
   line-height: 1.5;
   text-wrap: pretty;
 }
 
 .libcal-day__fact-source {
-  font-size: 0.85rem;
-  font-weight: 600;
+  font-size: 0.75rem;
   color: inherit;
   text-underline-offset: 0.2em;
 }
