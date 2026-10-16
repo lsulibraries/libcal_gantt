@@ -264,6 +264,37 @@
   display: block;
 }
 
+/* Wikipedia "On this day" on a day with no timed events: an aside in the
+   feature slot, set apart from the event list by an accent rule. */
+.libcal-day__fact {
+  padding: 1.25rem 1.25rem 1.125rem;
+  border-inline-start: 3px solid var(--ldc-accent);
+  background: color-mix(in srgb, var(--ldc-border) 25%, transparent);
+}
+
+.libcal-day__fact-label {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ldc-muted);
+}
+
+.libcal-day__fact-text {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.libcal-day__fact-source {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: inherit;
+  text-underline-offset: 0.2em;
+}
+
 .libcal-day__events {
   list-style: none;
   margin: 0;

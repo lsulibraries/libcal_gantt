@@ -72,6 +72,37 @@ The chevrons are inline SVGs drawn in `currentColor`
 that `data-bs-theme="dark"` inverts to black, which made them invisible on
 dark sections. They now follow the text colour in light and dark.
 
+## Quiet days: Wikipedia "On this day" (2026-10-16)
+
+A day with no timed events (nothing, or only all-day items) shows one
+Wikipedia "On this day" anniversary in the feature slot, above any all-day
+items, like the parent module's homepage strip does for empty days.
+
+* **Server:** `CarouselEventsController::quietDays()` finds the days in
+  the window with no timed segment (a segment that runs the whole day is
+  all-day, the same test as the JS), and the parent's `OnThisDayClient`
+  returns their facts in `onThisDay`. Same setting ("Show Wikipedia On this
+  day facts on empty days" at `/admin/config/services/libcal-gantt`, off
+  by default), same per-date cache, same soft failure: no setting, no
+  answer from Wikipedia, no fact.
+* **Looser than the homepage:** the parent counts any event, all-day
+  included, as busy. The carousel only counts timed events, so a day with
+  just a donation bin still gets a fact.
+* **Front end:** one fact per day at random per page load
+  (`pickFact()`), drawn by `buildFact()` with the homepage's wording
+  ("On this day in 1859") and a required "Wikipedia" source link (the
+  CC BY-SA attribution; its accessible name names the article and the new
+  tab). A day with no events at all still says "No events scheduled." under
+  it. Markup: `.libcal-day__fact`, `__fact-label`, `__fact-text`,
+  `__fact-source`.
+
+## Featured image: timed events only (2026-10-16)
+
+The feature slot only shows the image of a timed event. All-day items (a
+donation bin, an open room) are standing notices, not the day's programme,
+so their images are not featured. A quiet day's fact takes the slot
+instead.
+
 ## Next events in "On this page" (Palefire)
 
 On Palefire Modular pages the next three timed events (not all-day, not

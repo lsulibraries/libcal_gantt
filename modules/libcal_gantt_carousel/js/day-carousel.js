@@ -91,7 +91,8 @@
   function buildSlides(data, options) {
     const rows = Array.isArray(data.rows) ? data.rows : [];
     const weather = isObject(data.weather) ? data.weather : {};
-    const list = (Array.isArray(data.days) ? data.days : []).map((day) => ({ day: day, weekend: null }));
+    const onThisDay = isObject(data.onThisDay) ? data.onThisDay : {};
+    const list =(Array.isArray(data.days) ? data.days : []).map((day) => ({ day: day, weekend: null }));
 
     if (options.includeWeekends && Array.isArray(data.weekends)) {
       data.weekends.forEach((weekend) => {
@@ -107,7 +108,24 @@
       weather: weather[item.day] || null,
       hours: options.showHours ? collectHours(item.weekend ? data.weekendHours : data.hours, rows, item.day) : [],
       events: item.weekend ? weekendEvents(item.weekend, item.day) : weekdayEvents(data.events, item.day),
+      // Wikipedia "On this day" list; CarouselEventsController only sends
+      // it for days with no timed events (and only with the setting on).
+      fact: pickFact(onThisDay[item.day]),
     }));
+  }
+
+  /**
+   * One "On this day" fact from a day's list, or null.
+   *
+   * Random per page load, like pickOnThisDayFact() in gantt-timeline.js;
+   * each slide is built once, so the pick is stable for the visit.
+   */
+  function pickFact(facts) {
+    if (!Array.isArray(facts) || !facts.length) {
+      return null;
+    }
+    const fact = facts[Math.floor(Math.random() * facts.length)];
+    return fact && typeof fact.text === 'string' && fact.text ? fact : null;
   }
 
   function collectHours(hoursByRow, rows, day) {
@@ -272,8 +290,15 @@
 
     // Right column: events.
     const main = make('div', 'libcal-day__main');
+    // Quiet day (no timed events): the "On this day" fact takes the feature
+    // slot, above any all-day items.
+    if (slide.fact) {
+      main.appendChild(buildFact(slide.fact));
+    }
     if (slide.events.length) {
-      const featured = options.showImages ? slide.events.find((event) => event.image) : null;
+      // Only a timed event's image is featured: all-day items (a donation
+      // bin, an open room) are standing notices, not the day's programme.
+      const featured = options.showImages && !slide.fact ? slide.events.find((event) => event.image && !event.allDay) : null;
       if (featured) {
         const figure = make('figure', 'libcal-day__feature');
         const img = document.createElement('img');
@@ -323,6 +348,46 @@
     grid.appendChild(main);
     item.appendChild(grid);
     return item;
+  }
+
+  /**
+   * A Wikipedia "On this day" anniversary for a quiet day.
+   *
+   * Same content and wording as buildHomepageFact() in gantt-timeline.js:
+   * a block with its own visible label, never in the event list, so it
+   * can't be mistaken for something happening at the library. A plain div,
+   * not an <aside>: up to three days show at once, and three complementary
+   * landmarks would only add noise. Every string goes in through
+   * textContent. The source link is the CC BY-SA attribution, so it is
+   * required; its accessible name says where it goes.
+   */
+  function buildFact(fact) {
+    const wrap = make('div', 'libcal-day__fact');
+    const year = typeof fact.year === 'number' && isFinite(fact.year) ? fact.year : null;
+    let label;
+    if (year === null) {
+      label = Drupal.t('On this day');
+    }
+    else if (year < 0) {
+      label = Drupal.t('On this day in @year BC', { '@year': String(Math.abs(year)) });
+    }
+    else {
+      label = Drupal.t('On this day in @year', { '@year': String(year) });
+    }
+    wrap.appendChild(paragraph('libcal-day__fact-label', label));
+    wrap.appendChild(paragraph('libcal-day__fact-text', fact.text));
+
+    if (typeof fact.url === 'string' && /^https:\/\/en\.wikipedia\.org\//.test(fact.url)) {
+      const link = make('a', 'libcal-day__fact-source', Drupal.t('Wikipedia'));
+      link.href = fact.url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.setAttribute('aria-label', fact.title
+        ? Drupal.t('Read about @title on Wikipedia (opens in a new tab)', { '@title': fact.title })
+        : Drupal.t('Read more on Wikipedia (opens in a new tab)'));
+      wrap.appendChild(link);
+    }
+    return wrap;
   }
 
   function buildWeather(entry) {
