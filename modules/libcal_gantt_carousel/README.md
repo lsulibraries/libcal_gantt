@@ -102,7 +102,9 @@ top, with an accent rule).
 ## Show only event days (2026-10-18)
 
 The block setting **Show only event days** (`only_event_days`, off by
-default) leaves out days that have no events, or only all-day events.
+default) hides all-day events from the slides, then leaves out days with
+no events left. All-day events used to stay listed on the days that were
+kept; they no longer do.
 The test for "all-day" is the one the slides use for their "All day" label:
 a weekday segment that runs the whole day, or a weekend event from
 12:00 AM to 11:59 PM. On the block it prints `data-only-event-days="1"`,

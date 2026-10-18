@@ -114,22 +114,20 @@
       fact: pickFact(onThisDay[item.day]),
     }));
 
-    // "Show only event days": skip days whose events are all all-day items
-    // (a donation bin, an open room) or that have none, then take the
-    // first maxDays. Only the fetched window is searched (the parent's
-    // weekday_count weekdays plus their weekends, about two weeks), so a
-    // quiet fortnight shows fewer slides rather than reaching further out.
-    const shown = options.onlyEventDays ? slides.filter(hasTimedEvent) : slides;
-    return shown.slice(0, options.maxDays);
-  }
+    if (!options.onlyEventDays) {
+      return slides.slice(0, options.maxDays);
+    }
 
-  /**
-   * TRUE when a slide has at least one event with a start and end time.
-   * Uses the same all-day test as the event lists, so a day is kept exactly
-   * when it would show something other than "All day".
-   */
-  function hasTimedEvent(slide) {
-    return slide.events.some((event) => !event.allDay);
+    // "Show only event days": all-day items (a donation bin, an open room)
+    // are dropped from every slide, then days left with no events are
+    // skipped, and the first maxDays are kept. Only the fetched window is
+    // searched (the parent's weekday_count weekdays plus their weekends,
+    // about two weeks), so a quiet fortnight shows fewer slides rather than
+    // reaching further out.
+    return slides
+      .map((slide) => Object.assign(slide, { events: slide.events.filter((event) => !event.allDay) }))
+      .filter((slide) => slide.events.length > 0)
+      .slice(0, options.maxDays);
   }
 
   /**

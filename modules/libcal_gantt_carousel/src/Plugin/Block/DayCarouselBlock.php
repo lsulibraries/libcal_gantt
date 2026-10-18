@@ -65,7 +65,7 @@ class DayCarouselBlock extends BlockBase implements ContainerFactoryPluginInterf
     $form['only_event_days'] = [
       '#type' => 'checkbox', '#title' => $this->t('Show only event days'),
       '#default_value' => $c['only_event_days'],
-      '#description' => $this->t('Skip days with no events, or with only all-day events. "Slides (days)" then counts event days, taken from the next two weeks or so.'),
+      '#description' => $this->t('Hide all-day events and skip days with no other events. "Slides (days)" then counts event days, taken from the next two weeks or so.'),
     ];
     $form['events_per_slide'] = [
       '#type' => 'number', '#title' => $this->t('Events listed per slide'), '#min' => 1, '#max' => 20,
