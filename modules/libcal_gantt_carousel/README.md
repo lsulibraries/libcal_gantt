@@ -7,8 +7,9 @@ for each campus row, and that day's events.
 
 ## Why it is a submodule
 
-* No file in `libcal_gantt` changes, so Origami's Gantt and homepage
-  blocks behave exactly as before.
+* Origami's Gantt and homepage blocks behave exactly as before. The only
+  change in `libcal_gantt` itself is a protected `selectCalendar()` seam
+  (same output), so the carousel can merge calendars.
 * Credentials, calendars, campus rows, hours feeds, weather coordinates and
   caches all come from `/admin/config/services/libcal-gantt`. Nothing is
   configured twice.
@@ -98,6 +99,24 @@ top, with an accent rule).
   tab). A day with no events at all says "No events scheduled." above it.
   Markup: `.libcal-day__fact`, `__fact-label`, `__fact-text`,
   `__fact-source`.
+
+## Several calendars in one carousel (2026-10-18)
+
+The block's **Calendar key** takes one key or several, comma-separated
+("8030,16219"). Keys are the first calendar ID on each line of the
+"Calendars" setting on `/admin/config/services/libcal-gantt`. With two or
+more keys, `CarouselEventsController::selectCalendar()` merges their LibCal
+IDs into one request, as a "8030,16219|Combined" line would, and removes
+duplicates. Unknown keys are ignored, and empty means the first calendar,
+as before.
+
+The parent controller now picks its tab in a protected
+`GanttEventsController::selectCalendar()`. Its behaviour is unchanged, so
+the Gantt grid and the homepage still read one `?calendar=` key. Only the
+carousel's endpoint accepts a list.
+
+In a Palefire Modular page, the Events carousel paragraph's
+`field_carousel_calendars` checkboxes set this (see palefire_modular).
 
 ## Show only event days (2026-10-18)
 

@@ -92,6 +92,30 @@ class CarouselEventsController extends GanttEventsController {
   }
 
   /**
+   * One tab, or several merged: ?calendar=8030,16219.
+   *
+   * Each comma-separated key must be a configured tab ("Calendars" on the
+   * LibCal Gantt settings); unknown keys are ignored. With two or more
+   * valid keys their LibCal IDs are merged (as a "8030,8031|Combined" line
+   * would be) and the key reported back is the keys joined with commas.
+   * One key, or none valid, behaves exactly like the parent.
+   */
+  protected function selectCalendar(Request $request, array $calendars): array {
+    $keys = array_values(array_unique(array_filter(
+      array_map('trim', explode(',', (string) $request->query->get('calendar', ''))),
+      static fn (string $key): bool => $key !== '' && isset($calendars[$key]),
+    )));
+    if (count($keys) < 2) {
+      return parent::selectCalendar($request->duplicate(['calendar' => $keys[0] ?? '']), $calendars);
+    }
+    $ids = [];
+    foreach ($keys as $key) {
+      $ids = array_merge($ids, $calendars[$key]['ids']);
+    }
+    return [implode(',', $keys), array_values(array_unique($ids))];
+  }
+
+  /**
    * Same timezone resolution as GanttEventsController::getEvents().
    */
   protected function siteTimezone(): \DateTimeZone {

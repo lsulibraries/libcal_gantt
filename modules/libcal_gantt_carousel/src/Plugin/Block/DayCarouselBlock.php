@@ -85,7 +85,7 @@ class DayCarouselBlock extends BlockBase implements ContainerFactoryPluginInterf
     ];
     $form['calendar'] = [
       '#type' => 'textfield', '#title' => $this->t('Calendar key'), '#default_value' => $c['calendar'],
-      '#description' => $this->t('Optional. A key from the "Calendars" setting of LibCal Gantt Timeline. Leave empty to use the first calendar.'),
+      '#description' => $this->t('Optional. One or more keys from the "Calendars" setting of LibCal Gantt Timeline (the first calendar ID on each line), separated by commas, e.g. "8030,16219". Several keys merge those calendars into one carousel. Leave empty to use the first calendar.'),
     ];
     $form['full_calendar_url'] = [
       '#type' => 'textfield', '#title' => $this->t('Full calendar URL'), '#maxlength' => 255,
@@ -106,9 +106,11 @@ class DayCarouselBlock extends BlockBase implements ContainerFactoryPluginInterf
     foreach (['include_weekends', 'only_event_days', 'show_hours', 'show_images'] as $key) {
       $this->configuration[$key] = (bool) $form_state->getValue($key);
     }
-    foreach (['calendar', 'full_calendar_url', 'aria_label'] as $key) {
+    foreach (['full_calendar_url', 'aria_label'] as $key) {
       $this->configuration[$key] = trim((string) $form_state->getValue($key));
     }
+    // "8030, 16219 ," -> "8030,16219".
+    $this->configuration['calendar'] = implode(',', array_filter(array_map('trim', explode(',', (string) $form_state->getValue('calendar')))));
   }
 
   public function build(): array {

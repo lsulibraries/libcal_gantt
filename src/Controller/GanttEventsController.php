@@ -95,12 +95,7 @@ class GanttEventsController extends ControllerBase {
     // client-side filter over already-fetched events, so a tab's own
     // events are never even downloaded until it's selected.
     $calendars = LibCalClient::parseCalendars((string) $config->get('calendars'));
-    $calendarKeys = array_keys($calendars);
-    $requestedCalendar = (string) $request->query->get('calendar', '');
-    $selectedCalendarKey = ($requestedCalendar !== '' && isset($calendars[$requestedCalendar]))
-      ? $requestedCalendar
-      : ($calendarKeys[0] ?? NULL);
-    $selectedCalendarIds = $selectedCalendarKey !== NULL ? $calendars[$selectedCalendarKey]['ids'] : [];
+    [$selectedCalendarKey, $selectedCalendarIds] = $this->selectCalendar($request, $calendars);
 
     $calendarList = [];
     foreach ($calendars as $key => $calendar) {
@@ -286,6 +281,27 @@ class GanttEventsController extends ControllerBase {
     $response->setPrivate();
     $response->setMaxAge(0);
     return $response;
+  }
+
+  /**
+   * The calendar tab this request asked for, as [key, LibCal IDs].
+   *
+   * ?calendar=<key> picks a configured tab; an unrecognized or missing key
+   * falls back to the first tab, and no tabs at all gives [NULL, []].
+   * Protected so libcal_gantt_carousel can merge several tabs into one
+   * request without the grid or homepage changing.
+   *
+   * @param array<string, array{label: string, ids: array<int, int>}> $calendars
+   *   From LibCalClient::parseCalendars().
+   *
+   * @return array{0: string|null, 1: array<int, int>}
+   */
+  protected function selectCalendar(Request $request, array $calendars): array {
+    $requested = (string) $request->query->get('calendar', '');
+    $key = ($requested !== '' && isset($calendars[$requested]))
+      ? $requested
+      : (array_key_first($calendars) ?? NULL);
+    return [$key, $key !== NULL ? $calendars[$key]['ids'] : []];
   }
 
   /**
