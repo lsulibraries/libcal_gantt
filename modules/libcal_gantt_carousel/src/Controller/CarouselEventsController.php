@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\libcal_gantt_carousel\Controller;
 
 use Drupal\libcal_gantt\Controller\GanttEventsController;
+use Drupal\libcal_gantt\Service\LibCalClient;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -30,6 +31,8 @@ class CarouselEventsController extends GanttEventsController {
     if (!is_array($data) || (int) ($data['offset'] ?? 0) !== 0 || empty($data['days'])) {
       return $response;
     }
+
+    $data = $this->filterByCampus($data, (string) $request->query->get('campus', ''));
 
     $days = array_values((array) $data['days']);
     foreach ((array) ($data['weekends'] ?? []) as $weekend) {
@@ -89,6 +92,52 @@ class CarouselEventsController extends GanttEventsController {
       }
     }
     return array_values(array_filter($days, static fn (string $day): bool => !isset($timed[$day])));
+  }
+
+  /**
+   * Keeps only events from the libraries in ?campus=262,261.
+   *
+   * The same filter as "LSU Libraries" (cm=) on LibCal's public calendar:
+   * campus IDs from the "Campus rows" setting. An event's campus is kept
+   * even when it is online, so a library's online events stay in, as on
+   * LibCal. Building hours are cut down to the chosen libraries too.
+   * Unknown IDs are ignored; none valid, or no ?campus, changes nothing.
+   *
+   * @param array<string, mixed> $data
+   *   The decoded parent payload.
+   *
+   * @return array<string, mixed>
+   */
+  protected function filterByCampus(array $data, string $param): array {
+    $rows = LibCalClient::parseCampusRows((string) $this->config('libcal_gantt.settings')->get('campus_rows'));
+    $ids = array_values(array_filter(
+      array_map('intval', explode(',', $param)),
+      static fn (int $id): bool => isset($rows[$id]),
+    ));
+    if (!$ids) {
+      return $data;
+    }
+    $wanted = array_flip($ids);
+    $keep = static fn ($event): bool => is_array($event) && isset($wanted[(int) ($event['campusId'] ?? 0)]);
+
+    $data['events'] = array_values(array_filter((array) ($data['events'] ?? []), $keep));
+
+    foreach ((array) ($data['weekends'] ?? []) as $i => $weekend) {
+      $byRow = [];
+      foreach ((array) ($weekend['events'] ?? []) as $row => $events) {
+        $events = array_values(array_filter((array) $events, $keep));
+        if ($events) {
+          $byRow[$row] = $events;
+        }
+      }
+      // An object even when empty: day-carousel.js reads it as a map.
+      $data['weekends'][$i]['events'] = $byRow ?: new \stdClass();
+    }
+
+    // Hours rows (and their order) for the chosen libraries only.
+    $data['rows'] = array_values(array_intersect_key($rows, $wanted));
+    $data['campus'] = implode(',', $ids);
+    return $data;
   }
 
   /**

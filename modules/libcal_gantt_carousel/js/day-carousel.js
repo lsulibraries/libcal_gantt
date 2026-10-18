@@ -56,6 +56,7 @@
       showImages: d.showImages !== '0',
       interval: int(d.interval, 0),
       calendar: d.calendar || '',
+      campus: d.campus || '',
       fullCalendarUrl: d.fullCalendarUrl || '',
       label: d.label || Drupal.t('Upcoming library days'),
     };
@@ -66,6 +67,9 @@
     let url = endpoint + (endpoint.indexOf('?') === -1 ? '?' : '&') + 'offset=0';
     if (options.calendar) {
       url += '&calendar=' + encodeURIComponent(options.calendar);
+    }
+    if (options.campus) {
+      url += '&campus=' + encodeURIComponent(options.campus);
     }
 
     el.setAttribute('aria-busy', 'true');

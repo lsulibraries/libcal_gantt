@@ -8,8 +8,9 @@ for each campus row, and that day's events.
 ## Why it is a submodule
 
 * Origami's Gantt and homepage blocks behave exactly as before. The only
-  change in `libcal_gantt` itself is a protected `selectCalendar()` seam
-  (same output), so the carousel can merge calendars.
+  changes in `libcal_gantt` itself are a protected `selectCalendar()` seam
+  (same output), so the carousel can merge calendars, and an extra
+  `campusId` on each event, which the carousel filters libraries by.
 * Credentials, calendars, campus rows, hours feeds, weather coordinates and
   caches all come from `/admin/config/services/libcal-gantt`. Nothing is
   configured twice.
@@ -99,6 +100,30 @@ top, with an accent rule).
   tab). A day with no events at all says "No events scheduled." above it.
   Markup: `.libcal-day__fact`, `__fact-label`, `__fact-text`,
   `__fact-source`.
+
+## Only some libraries (2026-10-18)
+
+The block's **Libraries (campus IDs)** setting is the carousel's version of
+the "LSU Libraries" filter on LibCal's public calendar
+(`cm=262` = Hill Memorial Library). It takes campus IDs from the "Campus
+rows" setting, comma-separated, e.g. "262" or "262,261". Empty means every
+library.
+
+- **The request:** the block prints `data-campus`, and `day-carousel.js`
+  sends it as `?campus=` to `/libcal-gantt/carousel-events`.
+- **Filtering:** `CarouselEventsController::filterByCampus()` keeps only
+  those libraries' events, weekend items included.
+- **Online events:** a library's online events stay in, as on LibCal.
+  To make that possible, the parent payload now carries each event's
+  `campusId`, which the Gantt grid and homepage don't use.
+- **Hours:** the building hours on each slide are limited to the chosen
+  libraries, in the order of the Campus rows setting.
+- **Unknown IDs** are ignored.
+
+The "Full calendar" link isn't changed. To land visitors on the same
+filtered view, set the block's **Full calendar URL** to the LibCal link
+with `cm=` in it. In palefire_modular the Events carousel paragraph's
+`field_carousel_campuses` checkboxes set this.
 
 ## Several calendars in one carousel (2026-10-18)
 

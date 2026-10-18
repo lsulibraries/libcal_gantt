@@ -206,6 +206,7 @@ class GanttEventsController extends ControllerBase {
               // gantt-timeline.js). The desktop weekend note ignores it -
               // an 88px track has no room for a background image.
               'image' => $event['image'],
+              'campusId' => $event['campusId'],
               'url' => $event['url'],
               'startLabel' => $event['startLabel'],
               'endLabel' => $event['endLabel'],
@@ -550,16 +551,14 @@ class GanttEventsController extends ControllerBase {
 
     $isOnline = $this->isOnlineEvent($event, $location, $onlineKeywords);
 
-    if ($isOnline) {
-      $row = $onlineRowLabel;
+    // LibCal's campus ("LSU Libraries" filter, cm= on the public calendar).
+    // Read for online events too, so a filter by library keeps that
+    // library's online events, as LibCal's own filter does.
+    $campusId = 0;
+    if (!empty($event['campus'])) {
+      $campusId = is_array($event['campus']) ? (int) ($event['campus']['id'] ?? 0) : (int) $event['campus'];
     }
-    else {
-      $campusId = 0;
-      if (!empty($event['campus'])) {
-        $campusId = is_array($event['campus']) ? (int) ($event['campus']['id'] ?? 0) : (int) $event['campus'];
-      }
-      $row = $campusRows[$campusId] ?? NULL;
-    }
+    $row = $isOnline ? $onlineRowLabel : ($campusRows[$campusId] ?? NULL);
 
     // Not online and not one of the allowlisted campuses - excluded from
     // the chart entirely rather than dumped into a generic catch-all row.
@@ -601,6 +600,9 @@ class GanttEventsController extends ControllerBase {
       'categories' => $categories,
       'isOnline' => $isOnline,
       'row' => $row,
+      // Not drawn by the grid or homepage; libcal_gantt_carousel filters
+      // on it (?campus=).
+      'campusId' => $campusId,
       'url' => $url,
       'image' => $image,
       'imageAlt' => $imageAlt,

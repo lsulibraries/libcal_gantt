@@ -46,6 +46,7 @@ class DayCarouselBlock extends BlockBase implements ContainerFactoryPluginInterf
       'show_images' => TRUE,
       'interval' => 0,
       'calendar' => '',
+      'campus' => '',
       'full_calendar_url' => '',
       'aria_label' => '',
     ] + parent::defaultConfiguration();
@@ -87,6 +88,10 @@ class DayCarouselBlock extends BlockBase implements ContainerFactoryPluginInterf
       '#type' => 'textfield', '#title' => $this->t('Calendar key'), '#default_value' => $c['calendar'],
       '#description' => $this->t('Optional. One or more keys from the "Calendars" setting of LibCal Gantt Timeline (the first calendar ID on each line), separated by commas, e.g. "8030,16219". Several keys merge those calendars into one carousel. Leave empty to use the first calendar.'),
     ];
+    $form['campus'] = [
+      '#type' => 'textfield', '#title' => $this->t('Libraries (campus IDs)'), '#default_value' => $c['campus'],
+      '#description' => $this->t('Optional. Only show events from these libraries, like the "LSU Libraries" filter on the LibCal calendar: campus IDs from the "Campus rows" setting, separated by commas, e.g. "262" for Hill Memorial Library. Building hours are limited to them too. Leave empty for every library.'),
+    ];
     $form['full_calendar_url'] = [
       '#type' => 'textfield', '#title' => $this->t('Full calendar URL'), '#maxlength' => 255,
       '#default_value' => $c['full_calendar_url'],
@@ -110,7 +115,9 @@ class DayCarouselBlock extends BlockBase implements ContainerFactoryPluginInterf
       $this->configuration[$key] = trim((string) $form_state->getValue($key));
     }
     // "8030, 16219 ," -> "8030,16219".
-    $this->configuration['calendar'] = implode(',', array_filter(array_map('trim', explode(',', (string) $form_state->getValue('calendar')))));
+    foreach (['calendar', 'campus'] as $key) {
+      $this->configuration[$key] = implode(',', array_filter(array_map('trim', explode(',', (string) $form_state->getValue($key)))));
+    }
   }
 
   public function build(): array {
@@ -136,6 +143,7 @@ class DayCarouselBlock extends BlockBase implements ContainerFactoryPluginInterf
         'data-show-images' => $c['show_images'] ? '1' : '0',
         'data-interval' => (string) (int) $c['interval'],
         'data-calendar' => $c['calendar'],
+        'data-campus' => (string) ($c['campus'] ?? ''),
         'data-full-calendar-url' => $fullCalendarUrl,
         'data-label' => $c['aria_label'] !== '' ? $c['aria_label'] : (string) $this->t('Upcoming library days'),
       ],
