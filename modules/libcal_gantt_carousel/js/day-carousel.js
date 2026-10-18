@@ -50,6 +50,7 @@
     return {
       maxDays: Math.max(1, int(d.maxDays, 7)),
       includeWeekends: d.includeWeekends !== '0',
+      onlyEventDays: d.onlyEventDays === '1',
       eventsPerSlide: Math.max(1, int(d.eventsPerSlide, 6)),
       showHours: d.showHours !== '0',
       showImages: d.showImages !== '0',
@@ -102,7 +103,7 @@
     }
     list.sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
 
-    return list.slice(0, options.maxDays).map((item) => ({
+    const slides = list.map((item) => ({
       day: item.day,
       isWeekend: !!item.weekend,
       weather: weather[item.day] || null,
@@ -112,6 +113,23 @@
       // it for days with no timed events (and only with the setting on).
       fact: pickFact(onThisDay[item.day]),
     }));
+
+    // "Show only event days": skip days whose events are all all-day items
+    // (a donation bin, an open room) or that have none, then take the
+    // first maxDays. Only the fetched window is searched (the parent's
+    // weekday_count weekdays plus their weekends, about two weeks), so a
+    // quiet fortnight shows fewer slides rather than reaching further out.
+    const shown = options.onlyEventDays ? slides.filter(hasTimedEvent) : slides;
+    return shown.slice(0, options.maxDays);
+  }
+
+  /**
+   * TRUE when a slide has at least one event with a start and end time.
+   * Uses the same all-day test as the event lists, so a day is kept exactly
+   * when it would show something other than "All day".
+   */
+  function hasTimedEvent(slide) {
+    return slide.events.some((event) => !event.allDay);
   }
 
   /**
@@ -213,7 +231,9 @@
   function render(el, slides, options) {
     el.innerHTML = '';
     if (!slides.length) {
-      el.appendChild(paragraph('libcal-day-carousel__status', Drupal.t('No upcoming days to show.')));
+      el.appendChild(paragraph('libcal-day-carousel__status', options.onlyEventDays
+        ? Drupal.t('No upcoming events in the next two weeks.')
+        : Drupal.t('No upcoming days to show.')));
       return;
     }
 

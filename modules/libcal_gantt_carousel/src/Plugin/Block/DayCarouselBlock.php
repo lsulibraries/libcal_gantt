@@ -40,6 +40,7 @@ class DayCarouselBlock extends BlockBase implements ContainerFactoryPluginInterf
     return [
       'max_days' => 7,
       'include_weekends' => TRUE,
+      'only_event_days' => FALSE,
       'events_per_slide' => 6,
       'show_hours' => TRUE,
       'show_images' => TRUE,
@@ -60,6 +61,11 @@ class DayCarouselBlock extends BlockBase implements ContainerFactoryPluginInterf
     $form['include_weekends'] = [
       '#type' => 'checkbox', '#title' => $this->t('Include Saturday and Sunday slides'),
       '#default_value' => $c['include_weekends'],
+    ];
+    $form['only_event_days'] = [
+      '#type' => 'checkbox', '#title' => $this->t('Show only event days'),
+      '#default_value' => $c['only_event_days'],
+      '#description' => $this->t('Skip days with no events, or with only all-day events. "Slides (days)" then counts event days, taken from the next two weeks or so.'),
     ];
     $form['events_per_slide'] = [
       '#type' => 'number', '#title' => $this->t('Events listed per slide'), '#min' => 1, '#max' => 20,
@@ -97,7 +103,7 @@ class DayCarouselBlock extends BlockBase implements ContainerFactoryPluginInterf
     foreach (['max_days', 'events_per_slide', 'interval'] as $key) {
       $this->configuration[$key] = max(0, (int) $form_state->getValue($key));
     }
-    foreach (['include_weekends', 'show_hours', 'show_images'] as $key) {
+    foreach (['include_weekends', 'only_event_days', 'show_hours', 'show_images'] as $key) {
       $this->configuration[$key] = (bool) $form_state->getValue($key);
     }
     foreach (['calendar', 'full_calendar_url', 'aria_label'] as $key) {
@@ -122,6 +128,7 @@ class DayCarouselBlock extends BlockBase implements ContainerFactoryPluginInterf
         'data-toc-skip' => '',
         'data-max-days' => (string) max(1, (int) $c['max_days']),
         'data-include-weekends' => $c['include_weekends'] ? '1' : '0',
+        'data-only-event-days' => !empty($c['only_event_days']) ? '1' : '0',
         'data-events-per-slide' => (string) max(1, (int) $c['events_per_slide']),
         'data-show-hours' => $c['show_hours'] ? '1' : '0',
         'data-show-images' => $c['show_images'] ? '1' : '0',

@@ -99,6 +99,28 @@ top, with an accent rule).
   Markup: `.libcal-day__fact`, `__fact-label`, `__fact-text`,
   `__fact-source`.
 
+## Show only event days (2026-10-18)
+
+The block setting **Show only event days** (`only_event_days`, off by
+default) leaves out days that have no events, or only all-day events.
+The test for "all-day" is the one the slides use for their "All day" label:
+a weekday segment that runs the whole day, or a weekend event from
+12:00 AM to 11:59 PM. On the block it prints `data-only-event-days="1"`,
+and `buildSlides()` in `day-carousel.js` filters the days before taking
+the first **Slides (days)**, so that number counts event days.
+
+- **Search window:** only the window already fetched, so there's no extra
+  request. That window is libcal_gantt's weekday count (10 by default) plus
+  the weekends in between, about two weeks. If fewer days in it have events,
+  fewer slides show. If none do, the block says "No upcoming events in the
+  next two weeks."
+- **Weekends:** still follow "Include Saturday and Sunday slides".
+- **"On this day" facts:** they only go on days without timed events, so
+  with this setting on they never appear.
+
+In a Palefire Modular page, the Events carousel paragraph's
+`field_carousel_event_days` checkbox sets it (see palefire_modular).
+
 ## Featured image: timed events only (2026-10-16)
 
 The feature slot only shows the image of a timed event. All-day items (a
