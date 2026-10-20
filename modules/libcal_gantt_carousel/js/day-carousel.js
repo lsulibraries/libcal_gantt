@@ -444,7 +444,20 @@
     if (typeof entry.pop === 'number' && entry.pop >= WEATHER_POP_THRESHOLD) {
       text.push(Drupal.t('@pop% chance of precipitation', { '@pop': Math.round(entry.pop) }));
     }
-    wrap.appendChild(make('span', 'libcal-day__condition', text.filter(Boolean).join(' \u00b7 ')));
+    const cond = make('span', 'libcal-day__condition', text.filter(Boolean).join(' \u00b7 '));
+    // Days past the National Weather Service's week come from Open-Meteo,
+    // whose licence (CC BY 4.0) asks for credit: a small link after the
+    // forecast, styled like the "On this day" source.
+    if (entry.source === 'open-meteo') {
+      cond.appendChild(document.createTextNode(' \u00b7 '));
+      const link = make('a', 'libcal-day__fact-source libcal-day__weather-source', Drupal.t('Forecast: Open-Meteo'));
+      link.href = 'https://open-meteo.com/';
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.setAttribute('aria-label', Drupal.t('Forecast: Open-Meteo (opens in a new tab)'));
+      cond.appendChild(link);
+    }
+    wrap.appendChild(cond);
     return wrap;
   }
 

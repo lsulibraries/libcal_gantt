@@ -33,6 +33,13 @@ use Psr\Log\LoggerInterface;
  * answers 403 without one - see self::userAgent(), which is the single
  * likeliest reason a fresh install sees no forecast.
  *
+ * PAST NWS'S WEEK, OPEN-METEO. NWS forecasts about seven days. Days 8 to
+ * 16 (self::EXTENDED_HORIZON_DAYS), and a day from the third on that NWS
+ * leaves out, come from Open-Meteo's daily forecast (api.open-meteo.com: no
+ * key, CC BY 4.0, free for non-commercial use), one cached request, marked
+ * `source: open-meteo` so the carousel can credit it. NWS stays first
+ * wherever it has a day.
+ *
  * EVERYTHING HERE FAILS SOFT. A missing coordinate, an NWS outage, a
  * throttled request, a changed response shape and an unparseable timestamp
  * all end at the same place: return an empty array, the controller omits
@@ -89,6 +96,25 @@ class WeatherClient {
    */
   protected const ONSET_HORIZON_DAYS = 2;
 
+  /**
+   * Open-Meteo's forecast endpoint, for the days past NWS's week.
+   */
+  protected const EXTENDED_API = 'https://api.open-meteo.com/v1/forecast';
+
+  /**
+   * How many days, from today, have a forecast at all: Open-Meteo's
+   * longest daily forecast. Past that a forecast would be a guess, so those
+   * days show no weather.
+   */
+  protected const EXTENDED_HORIZON_DAYS = 16;
+
+  /**
+   * The first day, from today, Open-Meteo may fill. The homepage Gantt's
+   * weather days (GanttEventsController::WEATHER_DAYS, today and the next
+   * two) stay NWS only: its strip has no room to credit another source.
+   */
+  protected const EXTENDED_FROM_DAYS = 3;
+
   public function __construct(
     protected readonly ClientInterface $httpClient,
     protected readonly ConfigFactoryInterface $configFactory,
@@ -129,12 +155,41 @@ class WeatherClient {
       return [];
     }
 
+    $ttl = max(300, (int) ($config->get('weather_cache_ttl') ?: 1800));
+    $today = (new \DateTimeImmutable('@' . $this->time->getRequestTime()))
+      ->setTimezone($timezone)
+      ->format('Y-m-d');
+
+    $forecast = $this->nwsForecast($days, $lat, $lon, $today, $timezone, $ttl);
+
+    // NWS stops at about seven days. The days after that, out to
+    // self::EXTENDED_HORIZON_DAYS, come from Open-Meteo, and so does a day
+    // from self::EXTENDED_FROM_DAYS on that NWS left out (an outage).
+    $missing = [];
+    foreach ($days as $day) {
+      $day = (string) $day;
+      $ahead = $this->daysFromToday($today, $day, $timezone);
+      if (!isset($forecast[$day]) && $ahead >= self::EXTENDED_FROM_DAYS && $ahead < self::EXTENDED_HORIZON_DAYS) {
+        $missing[] = $day;
+      }
+    }
+    if ($missing) {
+      $forecast += $this->extendedForecast($missing, $lat, $lon, $timezone, $ttl);
+    }
+
+    return $forecast;
+  }
+
+  /**
+   * The NWS summaries for $days, keyed by Y-m-d; days NWS doesn't cover
+   * (past about a week) are absent.
+   */
+  protected function nwsForecast(array $days, float $lat, float $lon, string $today, \DateTimeZone $timezone, int $ttl): array {
     $grid = $this->getGridUrls($lat, $lon);
     if (!$grid) {
       return [];
     }
 
-    $ttl = max(300, (int) ($config->get('weather_cache_ttl') ?: 1800));
     // The twelve-hour periods carry the high, the low, the day's
     // precipitation chance and the condition text. Without them there is
     // nothing to say, so the hourly request isn't even attempted.
@@ -147,13 +202,9 @@ class WeatherClient {
     // rather than the row.
     $hourly = $this->fetchPeriods($grid['forecastHourly'], 'hourly', $ttl);
 
-    $today = (new \DateTimeImmutable('@' . $this->time->getRequestTime()))
-      ->setTimezone($timezone)
-      ->format('Y-m-d');
-
     $forecast = [];
     foreach (array_values($days) as $day) {
-      $withOnset = $hourly && $this->daysFromToday($today, $day, $timezone) < self::ONSET_HORIZON_DAYS;
+      $withOnset = $hourly && $this->daysFromToday($today, (string) $day, $timezone) < self::ONSET_HORIZON_DAYS;
       $summary = $this->summarizeDay((string) $day, $periods, $withOnset ? $hourly : [], $timezone);
       if ($summary) {
         $forecast[$day] = $summary;
@@ -161,6 +212,102 @@ class WeatherClient {
     }
 
     return $forecast;
+  }
+
+  /**
+   * Daily summaries from Open-Meteo for days NWS doesn't cover.
+   *
+   * One request for the whole horizon (daily values in the site timezone,
+   * Fahrenheit), cached for the forecast TTL like the NWS documents, empty
+   * results included. The same summary shape as summarizeDay(), with no
+   * onset hour (NWS only gives one for the first two days anyway) and
+   * `source: open-meteo`, which the carousel credits beside the forecast:
+   * Open-Meteo's data is CC BY 4.0, free for non-commercial use, no key.
+   *
+   * @param array<int, string> $days
+   *   Y-m-d strings within the horizon.
+   *
+   * @return array<string, array<string, mixed>>
+   *   Keyed by Y-m-d; days Open-Meteo has nothing for are absent.
+   */
+  protected function extendedForecast(array $days, float $lat, float $lon, \DateTimeZone $timezone, int $ttl): array {
+    $url = self::EXTENDED_API . '?' . http_build_query([
+      'latitude' => round($lat, 4),
+      'longitude' => round($lon, 4),
+      'daily' => 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max',
+      'temperature_unit' => 'fahrenheit',
+      'timezone' => $timezone->getName(),
+      'forecast_days' => self::EXTENDED_HORIZON_DAYS,
+    ]);
+
+    $cacheId = 'libcal_gantt:weather:extended:' . md5($url);
+    if ($cached = $this->cache->get($cacheId)) {
+      $daily = $cached->data;
+    }
+    else {
+      $data = $this->request($url, 'application/json');
+      $daily = is_array($data['daily'] ?? NULL) ? $data['daily'] : [];
+      // Temperatures only in Fahrenheit, as with NWS (temperature()).
+      if (($data['daily_units']['temperature_2m_max'] ?? '°F') !== '°F') {
+        unset($daily['temperature_2m_max'], $daily['temperature_2m_min']);
+      }
+      $this->cache->set($cacheId, $daily, $this->time->getRequestTime() + $ttl, [self::CACHE_TAG]);
+    }
+
+    $index = array_flip(array_map('strval', (array) ($daily['time'] ?? [])));
+    $forecast = [];
+    foreach ($days as $day) {
+      if (!isset($index[$day])) {
+        continue;
+      }
+      $i = $index[$day];
+      $condition = $this->wmoCondition($daily['weather_code'][$i] ?? NULL);
+      $high = $daily['temperature_2m_max'][$i] ?? NULL;
+      $low = $daily['temperature_2m_min'][$i] ?? NULL;
+      $high = is_numeric($high) ? (int) round((float) $high) : NULL;
+      $low = is_numeric($low) ? (int) round((float) $low) : NULL;
+      if ($condition === '' && $high === NULL && $low === NULL) {
+        continue;
+      }
+      $forecast[$day] = [
+        'high' => $high,
+        'low' => $low,
+        'pop' => $this->percent($daily['precipitation_probability_max'][$i] ?? NULL),
+        'condition' => $condition,
+        'icon' => $this->iconKey($condition),
+        'startHour' => NULL,
+        'sustained' => FALSE,
+        'source' => 'open-meteo',
+      ];
+    }
+
+    return $forecast;
+  }
+
+  /**
+   * Words for a WMO weather code (Open-Meteo's weather_code), in NWS's
+   * style so iconKey() reads them the same way; '' when unknown.
+   */
+  protected function wmoCondition(mixed $code): string {
+    if (!is_numeric($code)) {
+      return '';
+    }
+    $code = (int) $code;
+    return match (TRUE) {
+      $code === 0 => 'Sunny',
+      $code === 1 => 'Mostly Sunny',
+      $code === 2 => 'Partly Cloudy',
+      $code === 3 => 'Cloudy',
+      $code === 45, $code === 48 => 'Fog',
+      $code >= 51 && $code <= 55 => 'Drizzle',
+      $code === 56, $code === 57, $code === 66, $code === 67 => 'Freezing Rain',
+      $code >= 61 && $code <= 65 => 'Rain',
+      $code >= 71 && $code <= 77 => 'Snow',
+      $code >= 80 && $code <= 82 => 'Rain Showers',
+      $code === 85, $code === 86 => 'Snow Showers',
+      $code >= 95 && $code <= 99 => 'Thunderstorms',
+      default => '',
+    };
   }
 
   /**
@@ -339,13 +486,13 @@ class WeatherClient {
   /**
    * One GET against api.weather.gov, decoded, never allowed to throw.
    */
-  protected function request(string $url): array {
+  protected function request(string $url, string $accept = 'application/geo+json'): array {
     try {
       $response = $this->httpClient->request('GET', $url, [
         'headers' => [
-          // The documented versioned media type; plain application/json
-          // works but pins nothing.
-          'Accept' => 'application/geo+json',
+          // NWS: the documented versioned media type; plain
+          // application/json works but pins nothing. Open-Meteo: JSON.
+          'Accept' => $accept,
           'User-Agent' => $this->userAgent(),
         ],
         // Deliberately shorter than the LibCal timeouts. Weather is the

@@ -21,7 +21,9 @@ few weekdays, alongside building hours. Built for LSU Libraries.
 - **Multi-day events** are drawn once, spanning the days they cover.
 - **Building hours** from LibCal Hours, with live "open now" status.
 - **Weather** *(optional)* — a daily forecast from the National Weather
-  Service on the homepage teaser's first three days.
+  Service on the homepage teaser's first three days. The day carousel shows
+  it for every day up to 16 days out: NWS for its week, then Open-Meteo (no
+  key, CC BY 4.0, credited with a small "Forecast: Open-Meteo" link).
 - **Wikipedia "On this day"** *(optional)* — an empty homepage day gets a
   random anniversary from that date, with a link to the article. It's picked
   again on every page load.
@@ -70,7 +72,7 @@ composer require lsulibraries/libcal_gantt:dev-main
 | Online events row label / keywords | The label for the online row, plus fallback keywords for spotting online events |
 | Full calendar URL | Where the teaser's Full calendar button goes. A placement can override it. |
 | Building hours *(optional)* | An Hours feed URL, plus an optional feed URL and location ID (`lid`) for each row |
-| Daily weather *(optional)* | Turn it on and enter a latitude/longitude. The contact address defaults to the site email. |
+| Daily weather *(optional)* | Turn it on and enter a latitude/longitude. The contact address defaults to the site email. Days 8–16 (day carousel) use the same coordinate with Open-Meteo; nothing else to set. |
 | Wikipedia "On this day" *(optional)* | Tick **Show Wikipedia "On this day" facts on empty days** |
 | Advanced | Max events per request, and the events cache lifetime |
 
